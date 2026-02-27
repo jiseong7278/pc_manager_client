@@ -10,6 +10,7 @@ import redis
 
 import config
 from collector import collect_all
+from updater import trigger_update
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def publish_result(data: dict) -> None:
         r.xadd(
             config.STREAM_KEY,
             {"data": json.dumps(data, ensure_ascii=False)},
-            maxlen=5000,        # 스트림 최대 길이 유지
+            maxlen=5000,
             approximate=True,
         )
         logger.info(f"Stream 전송 완료: {config.STREAM_KEY}")
@@ -42,8 +43,9 @@ def publish_result(data: dict) -> None:
 def subscribe_and_run(stop_event) -> None:
     """
     Redis Pub-Sub 채널 구독 루프
-    서버에서 inspect 명령 수신 시 데이터 수집 후 Stream 전송
-    stop_event: threading.Event - 서비스 종료 시 루프 탈출용
+    서버에서 명령 수신 시 처리:
+      inspect - PC 데이터 수집 후 Stream 전송
+      update  - 클라이언트 업데이트 실행
     """
     hostname = socket.gethostname()
 
@@ -69,21 +71,36 @@ def subscribe_and_run(stop_event) -> None:
                     logger.warning(f"잘못된 메시지 형식: {message['data']}")
                     continue
 
-                command = payload.get("command")
-                target  = payload.get("target")   # 특정 PC 지정 시
+                if not isinstance(payload, dict):
+                    logger.warning(f"메시지가 dict가 아님: {type(payload)}")
+                    continue
 
-                # target 이 지정된 경우 내 호스트명과 일치할 때만 실행
+                command = payload.get("command")
+                target  = payload.get("target")
+
+                # target이 지정된 경우 내 호스트명과 일치할 때만 실행
                 if target and target != hostname:
                     continue
 
                 if command == "inspect":
-                    logger.info(f"점검 명령 수신 (command={command}, target={target or 'all'})")
+                    logger.info(f"점검 명령 수신 (target={target or 'all'})")
                     try:
                         data = collect_all()
-                        data["hostname"] = hostname
+                        data["hostname"]   = hostname
+                        data["ip_address"] = _get_ip_address()
                         publish_result(data)
                     except Exception as e:
                         logger.error(f"데이터 수집/전송 실패: {e}")
+
+                elif command == "update":
+                    logger.info(f"업데이트 명령 수신 (target={target or 'all'})")
+                    try:
+                        trigger_update()
+                    except Exception as e:
+                        logger.error(f"업데이트 실행 실패: {e}")
+
+                else:
+                    logger.warning(f"알 수 없는 명령: {command!r}")
 
         except redis.ConnectionError as e:
             logger.error(f"Redis 연결 실패: {e} - 5초 후 재시도")
@@ -99,3 +116,14 @@ def subscribe_and_run(stop_event) -> None:
                     r.close()
             except Exception:
                 pass
+
+
+def _get_ip_address() -> str:
+    """현재 PC의 IP 주소 조회"""
+    try:
+        # 외부 연결용 소켓으로 실제 사용 중인 IP 확인
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect((config.REDIS_HOST, config.REDIS_PORT))
+            return s.getsockname()[0]
+    except Exception:
+        return socket.gethostbyname(socket.gethostname())

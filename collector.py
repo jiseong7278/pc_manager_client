@@ -15,15 +15,14 @@ logger = logging.getLogger(__name__)
 def get_antivirus_info() -> dict:
     """WMI SecurityCenter2로 백신 탐지, 알약/V3/Defender 버전 수집"""
     try:
-        # WMI로 설치된 백신 목록 조회
         ps_script = """
         $av = Get-WmiObject -Namespace root/SecurityCenter2 -Class AntiVirusProduct 2>$null
         if ($av) {
             $av | ForEach-Object {
                 [PSCustomObject]@{
-                    name        = $_.displayName
+                    name          = $_.displayName
                     product_state = $_.productState
-                    path        = $_.pathToSignedProductExe
+                    path          = $_.pathToSignedProductExe
                 }
             } | ConvertTo-Json -Compress
         } else {
@@ -37,8 +36,8 @@ def get_antivirus_info() -> dict:
 
         programs = []
         for av in av_list:
-            name = av.get("name", "")
-            state = av.get("product_state", 0)
+            name    = av.get("name", "")
+            state   = av.get("product_state", 0)
             enabled = _parse_av_state(state)
 
             info = {
@@ -48,7 +47,6 @@ def get_antivirus_info() -> dict:
                 "type":    _detect_av_type(name),
             }
 
-            # 타입별 버전 수집
             if info["type"] == "defender":
                 info.update(_get_defender_version())
             elif info["type"] == "alyac":
@@ -112,10 +110,10 @@ def _get_defender_version() -> dict:
         result = _run_powershell(ps_script)
         data = _parse_json(result, {})
         return {
-            "version":          data.get("product_version"),
-            "engine_version":   data.get("engine_version"),
-            "signature_version":data.get("signature_version"),
-            "real_time":        data.get("real_time", False),
+            "version":           data.get("product_version"),
+            "engine_version":    data.get("engine_version"),
+            "signature_version": data.get("signature_version"),
+            "real_time":         data.get("real_time", False),
         }
     except Exception as e:
         logger.warning(f"Defender 버전 수집 실패: {e}")
@@ -137,15 +135,15 @@ def _get_registry_version(key_path: str, value_name: str) -> str | None:
 
 # ── PC 스펙 수집 ──────────────────────────────────────────────────
 def get_hardware_info() -> dict:
-    """CPU, GPU, RAM, 디스크, OS, MAC, 컴퓨터 이름 수집"""
+    """CPU, RAM, 디스크, OS, MAC, 컴퓨터 이름 수집"""
     return {
-        "mac_address":     _get_mac_address(),
-        "computer_name":   platform.node(),
-        "os":              _get_os_info(),
-        "cpu":             _get_cpu_info(),
-        "gpu":             _get_gpu_info(),
-        "ram":             _get_ram_info(),
-        "disks":           _get_disk_info(),
+        "mac_address":   _get_mac_address(),
+        "computer_name": platform.node(),
+        "os":            _get_os_info(),
+        "cpu":           _get_cpu_info(),
+        "gpu":           _get_gpu_info(),
+        "ram":           _get_ram_info(),
+        "disks":         _get_disk_info(),
     }
 
 
@@ -171,7 +169,6 @@ def _get_os_info() -> dict:
             version      = $os.Version
             build        = $os.BuildNumber
             architecture = $os.OSArchitecture
-            install_date = $os.InstallDate
         } | ConvertTo-Json -Compress
         """
         data = _parse_json(_run_powershell(ps_script), {})
@@ -199,10 +196,10 @@ def _get_cpu_info() -> dict:
         """
         data = _parse_json(_run_powershell(ps_script), {})
         return {
-            "name":         data.get("name", "Unknown"),
-            "cores":        data.get("cores"),
-            "logical_cpus": data.get("logical_cpus"),
-            "max_clock_mhz":data.get("max_clock"),
+            "name":          data.get("name", "Unknown"),
+            "cores":         data.get("cores"),
+            "logical_cpus":  data.get("logical_cpus"),
+            "max_clock_mhz": data.get("max_clock"),
         }
     except Exception as e:
         logger.warning(f"CPU 정보 수집 실패: {e}")
@@ -269,7 +266,7 @@ def _get_disk_info() -> list:
             size = d.get("Size", 0)
             disks.append({
                 "name":          d.get("FriendlyName", "Unknown"),
-                "type":          d.get("MediaType", "Unknown"),  # SSD / HDD
+                "type":          d.get("MediaType", "Unknown"),
                 "size_gb":       round(int(size) / (1024**3), 2) if size else None,
                 "health_status": d.get("HealthStatus", "Unknown"),
             })
@@ -281,6 +278,10 @@ def _get_disk_info() -> list:
 
 # ── 전체 데이터 통합 ──────────────────────────────────────────────
 def collect_all() -> dict:
+    """
+    PC 전체 데이터 수집
+    hostname, ip_address는 호출측(redis_client.py)에서 추가
+    """
     logger.info("PC 데이터 수집 시작")
     data = {
         "collected_at": datetime.now().isoformat(),
