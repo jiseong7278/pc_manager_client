@@ -69,19 +69,11 @@ jobs:
       # ── 8. 빌드 결과 확인 ────────────────────────────────────────
       - name: Verify build
         run: |
-          # dist 폴더 전체 구조 출력
-          Write-Host "=== dist 폴더 구조 ==="
-          if (Test-Path "dist") {
-            Get-ChildItem -Path "dist" -Recurse | Select-Object FullName
-          } else {
-            Write-Host "dist 폴더 없음"
-          }
-
+          Get-ChildItem -Path "dist" -Recurse | Select-Object FullName
           $exe = "dist\PCInspectClient\PCInspectClient.exe"
-          if (-not (Test-Path $exe)) {
-            Write-Error "Build failed: $exe not found"
-            exit 1
-          }
+          $exists = Test-Path $exe
+          Write-Host "exe exists: $exists"
+          if (-not $exists) { exit 1 }
           $size = (Get-Item $exe).Length / 1MB
           Write-Host "exe size: $([math]::Round($size, 1)) MB"
         shell: powershell
@@ -97,25 +89,7 @@ jobs:
 
       # ── 10. dist 파일 목록 wxs 자동 생성 ────────────────────────
       - name: Generate dist_files.wxs
-        run: |
-          $ver = "${{ steps.version.outputs.version }}"
-          $distDir = "dist\PCInspectClient"
-          $lines = @()
-          $guid = 1
-
-          Get-ChildItem -Path $distDir -Recurse -File |
-            Where-Object { $_.Name -ne "PCInspectClient.exe" } |
-            ForEach-Object {
-              $rel  = $_.FullName.Substring((Resolve-Path $distDir).Path.Length + 1)
-              $id   = "File_" + ($rel -replace '[\\.\-]','_')
-              $guid++
-              $lines += "      <Component Id=`"Comp_$id`" Guid=`"*`">"
-              $lines += "        <File Id=`"$id`" Source=`"dist\PCInspectClient\$rel`" KeyPath=`"yes`" />"
-              $lines += "      </Component>"
-            }
-
-          $lines | Set-Content dist_files.wxs
-          Write-Host "Generated dist_files.wxs with $($lines.Count / 3) components"
+        run: python generate_wxs.py
         shell: powershell
 
       # ── 11. MSI 빌드 ─────────────────────────────────────────────
