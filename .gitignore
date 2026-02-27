@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 로그 / 보고서 (런타임 생성 파일)
+server/logs/
+server/reports/
+
+# 환경 변수
+.env
+*.env
+
+# IDE
+.idea/
+.vscode/
+
+# Docker
+*.tar
