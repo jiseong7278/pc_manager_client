@@ -81,5 +81,3 @@ if __name__ == "__main__":
         print("오류: pywin32가 설치되어 있지 않습니다.")
         print("pip install pywin32")
         sys.exit(1)
-
-#
