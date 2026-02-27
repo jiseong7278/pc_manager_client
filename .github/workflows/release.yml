@@ -100,7 +100,6 @@ jobs:
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix build installer.wxs `
             -d AppVersion=$ver `
-            -ext WixToolset.UI.wixext `
             -o "dist\PCInspectClient_$ver.msi"
 
           if (-not (Test-Path "dist\PCInspectClient_$ver.msi")) {
