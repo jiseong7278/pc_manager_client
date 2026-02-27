@@ -83,13 +83,7 @@ def auto_install_and_start():
     try:
         if not service_exists:
             print("서비스를 설치합니다...")
-            win32serviceutil.InstallService(
-                PCInspectService._svc_reg_class_,
-                config.SERVICE_NAME,
-                config.SERVICE_DISPLAY,
-                startType=win32service.SERVICE_AUTO_START,
-                description=config.SERVICE_DESC,
-            )
+            win32serviceutil.HandleCommandLine(PCInspectService, argv=[sys.argv[0], "install"])
             print("서비스 설치 완료")
 
         if status != win32service.SERVICE_RUNNING:
