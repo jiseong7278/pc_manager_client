@@ -82,8 +82,9 @@ jobs:
       - name: Install WiX Toolset
         run: |
           dotnet tool install --global wix
-          wix extension add WixToolset.UI.wixext
-          wix extension add WixToolset.Util.wixext
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          wix extension add --global WixToolset.UI.wixext
+          wix extension add --global WixToolset.Util.wixext
           wix --version
         shell: powershell
 
@@ -96,6 +97,7 @@ jobs:
       - name: Build MSI with WiX
         run: |
           $ver = "${{ steps.version.outputs.version }}"
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix build installer.wxs `
             -d AppVersion=$ver `
             -ext WixToolset.UI.wixext `
