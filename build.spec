@@ -3,7 +3,7 @@
 # 실행: pyinstaller build.spec
 
 import sys
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
@@ -38,13 +38,13 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    [],                         # onedir: binaries/datas는 COLLECT로
+    [],
     exclude_binaries=True,      # onedir 방식
     name="PCInspectClient",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,                  # 서비스 exe는 UPX 압축 비활성화
+    upx=False,
     console=True,
     icon=None,
 )
@@ -57,5 +57,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="PCInspectClient",     # dist/PCInspectClient/ 폴더로 생성
+    name="PCInspectClient",
 )

@@ -69,6 +69,14 @@ jobs:
       # ── 8. 빌드 결과 확인 ────────────────────────────────────────
       - name: Verify build
         run: |
+          # dist 폴더 전체 구조 출력
+          Write-Host "=== dist 폴더 구조 ==="
+          if (Test-Path "dist") {
+            Get-ChildItem -Path "dist" -Recurse | Select-Object FullName
+          } else {
+            Write-Host "dist 폴더 없음"
+          }
+
           $exe = "dist\PCInspectClient\PCInspectClient.exe"
           if (-not (Test-Path $exe)) {
             Write-Error "Build failed: $exe not found"
@@ -82,6 +90,8 @@ jobs:
       - name: Install WiX Toolset
         run: |
           dotnet tool install --global wix
+          wix extension add WixToolset.UI.wixext
+          wix extension add WixToolset.Util.wixext
           wix --version
         shell: powershell
 
