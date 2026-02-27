@@ -1,0 +1,100 @@
+# .github/workflows/release.yml
+# 태그 push 시 테스트 → exe 빌드 → GitHub Release 배포
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"   # v1.0.0, v1.2.3 형태의 태그에만 실행
+
+jobs:
+  build:
+    name: Test, Build & Release
+    runs-on: windows-latest   # PyInstaller exe 빌드는 Windows에서
+
+    steps:
+
+      # ── 1. Checkout ─────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Python 설치 ──────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ── 3. 의존성 설치 ──────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      # ── 4. 버전 추출 (태그에서) ──────────────────────────────────
+      - name: Extract version from tag
+        id: version
+        run: |
+          $tag = "${{ github.ref_name }}"          # v1.2.3
+          $ver = $tag.TrimStart("v")               # 1.2.3
+          "tag=$tag"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Version: $ver"
+        shell: powershell
+
+      # ── 5. config.py 버전 자동 주입 ─────────────────────────────
+      - name: Inject version into config.py
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          $content = Get-Content config.py -Raw
+          $content = $content -replace 'CLIENT_VERSION\s*=\s*"[^"]*"', "CLIENT_VERSION = `"$ver`""
+          Set-Content config.py $content
+          Write-Host "Injected version: $ver"
+        shell: powershell
+
+      # ── 6. 테스트 실행 ───────────────────────────────────────────
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short
+        shell: powershell
+
+      # ── 7. exe 빌드 ─────────────────────────────────────────────
+      - name: Build exe with PyInstaller
+        run: |
+          pyinstaller build.spec --noconfirm
+          Write-Host "Build complete"
+        shell: powershell
+
+      # ── 8. exe 파일 확인 ─────────────────────────────────────────
+      - name: Verify exe exists
+        run: |
+          $exe = "dist\PCInspectClient.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Build failed: $exe not found"
+            exit 1
+          }
+          $size = (Get-Item $exe).Length / 1MB
+          Write-Host "exe size: $([math]::Round($size, 1)) MB"
+        shell: powershell
+
+      # ── 9. GitHub Release 생성 및 exe 업로드 ────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "PC Inspect Client ${{ steps.version.outputs.tag }}"
+          body: |
+            ## PC Inspect Client ${{ steps.version.outputs.tag }}
+
+            ### 설치 방법
+            1. `PCInspectClient.exe` 다운로드
+            2. 관리자 권한으로 실행: `PCInspectClient.exe install`
+            3. 서비스 시작: `PCInspectClient.exe start`
+
+            ### 변경 사항
+            ${{ github.event.head_commit.message }}
+          files: dist/PCInspectClient.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
