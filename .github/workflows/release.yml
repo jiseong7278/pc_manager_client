@@ -1,17 +1,17 @@
 # .github/workflows/release.yml
-# 태그 push 시 테스트 → exe 빌드 → GitHub Release 배포
+# 태그 push 시 테스트 → exe 빌드 → MSI 인스톨러 빌드 → GitHub Release 배포
 
 name: Build & Release
 
 on:
   push:
     tags:
-      - "v*.*.*"   # v1.0.0, v1.2.3 형태의 태그에만 실행
+      - "v*.*.*"
 
 jobs:
   build:
     name: Test, Build & Release
-    runs-on: windows-latest   # PyInstaller exe 빌드는 Windows에서
+    runs-on: windows-latest
 
     steps:
 
@@ -29,14 +29,15 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio
+          pip install -r requirements-test.txt
+        shell: powershell
 
-      # ── 4. 버전 추출 (태그에서) ──────────────────────────────────
+      # ── 4. 버전 추출 ────────────────────────────────────────────
       - name: Extract version from tag
         id: version
         run: |
-          $tag = "${{ github.ref_name }}"          # v1.2.3
-          $ver = $tag.TrimStart("v")               # 1.2.3
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart("v")
           "tag=$tag"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Version: $ver"
@@ -62,13 +63,13 @@ jobs:
       - name: Build exe with PyInstaller
         run: |
           pyinstaller build.spec --noconfirm
-          Write-Host "Build complete"
+          Write-Host "PyInstaller build complete"
         shell: powershell
 
-      # ── 8. exe 파일 확인 ─────────────────────────────────────────
-      - name: Verify exe exists
+      # ── 8. 빌드 결과 확인 ────────────────────────────────────────
+      - name: Verify build
         run: |
-          $exe = "dist\PCInspectClient.exe"
+          $exe = "dist\PCInspectClient\PCInspectClient.exe"
           if (-not (Test-Path $exe)) {
             Write-Error "Build failed: $exe not found"
             exit 1
@@ -77,7 +78,54 @@ jobs:
           Write-Host "exe size: $([math]::Round($size, 1)) MB"
         shell: powershell
 
-      # ── 9. GitHub Release 생성 및 exe 업로드 ────────────────────
+      # ── 9. WiX Toolset 설치 ──────────────────────────────────────
+      - name: Install WiX Toolset
+        run: |
+          dotnet tool install --global wix
+          wix --version
+        shell: powershell
+
+      # ── 10. dist 파일 목록 wxs 자동 생성 ────────────────────────
+      - name: Generate dist_files.wxs
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          $distDir = "dist\PCInspectClient"
+          $lines = @()
+          $guid = 1
+
+          Get-ChildItem -Path $distDir -Recurse -File |
+            Where-Object { $_.Name -ne "PCInspectClient.exe" } |
+            ForEach-Object {
+              $rel  = $_.FullName.Substring((Resolve-Path $distDir).Path.Length + 1)
+              $id   = "File_" + ($rel -replace '[\\.\-]','_')
+              $guid++
+              $lines += "      <Component Id=`"Comp_$id`" Guid=`"*`">"
+              $lines += "        <File Id=`"$id`" Source=`"dist\PCInspectClient\$rel`" KeyPath=`"yes`" />"
+              $lines += "      </Component>"
+            }
+
+          $lines | Set-Content dist_files.wxs
+          Write-Host "Generated dist_files.wxs with $($lines.Count / 3) components"
+        shell: powershell
+
+      # ── 11. MSI 빌드 ─────────────────────────────────────────────
+      - name: Build MSI with WiX
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          wix build installer.wxs `
+            -d AppVersion=$ver `
+            -ext WixToolset.UI.wixext `
+            -o "dist\PCInspectClient_$ver.msi"
+
+          if (-not (Test-Path "dist\PCInspectClient_$ver.msi")) {
+            Write-Error "MSI build failed"
+            exit 1
+          }
+          $size = (Get-Item "dist\PCInspectClient_$ver.msi").Length / 1MB
+          Write-Host "MSI size: $([math]::Round($size, 1)) MB"
+        shell: powershell
+
+      # ── 12. GitHub Release 생성 및 MSI 업로드 ───────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -87,13 +135,18 @@ jobs:
             ## PC Inspect Client ${{ steps.version.outputs.tag }}
 
             ### 설치 방법
-            1. `PCInspectClient.exe` 다운로드
-            2. 관리자 권한으로 실행: `PCInspectClient.exe install`
-            3. 서비스 시작: `PCInspectClient.exe start`
+            1. `PCInspectClient_${{ steps.version.outputs.version }}.msi` 다운로드
+            2. 관리자 권한으로 실행
+            3. 설치 마법사 안내에 따라 진행
+            4. 자동으로 `C:\Program Files\PCInspectClient\` 에 설치 + 서비스 등록/시작
+
+            ### 제거 방법
+            - 제어판 → 프로그램 추가/제거 → PC Inspect Client → 제거
+            - 서비스 자동 중지 및 프로세스 종료 후 파일 삭제
 
             ### 변경 사항
             ${{ github.event.head_commit.message }}
-          files: dist/PCInspectClient.exe
+          files: dist/PCInspectClient_${{ steps.version.outputs.version }}.msi
           draft: false
           prerelease: false
         env:

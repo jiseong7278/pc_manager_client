@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package
+    Name="PC Inspect Client"
+    Version="$(var.AppVersion)"
+    Manufacturer="PC Manager"
+    UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+    Language="1042"
+    Codepage="949"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <!-- 기존 버전 자동 업그레이드 -->
+    <MajorUpgrade
+      DowngradeErrorMessage="더 최신 버전이 이미 설치되어 있습니다."
+      Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- UI (기본 설치 마법사) -->
+    <ui:WixUI Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
+
+    <!-- 설치 경로 -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="PCInspectClient" />
+    </StandardDirectory>
+
+    <!-- 파일 컴포넌트 -->
+    <ComponentGroup Id="MainComponents" Directory="INSTALLFOLDER">
+
+      <!-- 메인 exe -->
+      <Component Id="MainExe" Guid="B1C2D3E4-F5A6-7890-BCDE-F12345678901">
+        <File Id="PCInspectClientExe"
+              Source="dist\PCInspectClient\PCInspectClient.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- kill_process.ps1 -->
+      <Component Id="KillScript" Guid="C2D3E4F5-A6B7-8901-CDEF-123456789012">
+        <File Id="KillProcessPs1"
+              Source="kill_process.ps1"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- dist/PCInspectClient/ 폴더의 나머지 파일들 -->
+      <?include dist_files.wxs ?>
+
+    </ComponentGroup>
+
+    <Feature Id="MainFeature" Title="PC Inspect Client" Level="1">
+      <ComponentGroupRef Id="MainComponents" />
+    </Feature>
+
+    <!-- 서비스 설치/제거 -->
+    <CustomAction Id="InstallService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]PCInspectClient.exe&quot; install"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <CustomAction Id="StartService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]PCInspectClient.exe&quot; start"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <CustomAction Id="StopService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]PCInspectClient.exe&quot; stop"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <CustomAction Id="RemoveService"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]PCInspectClient.exe&quot; remove"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <CustomAction Id="KillProcess"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]kill_process.ps1&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <!-- 설치 시: 서비스 등록 → 시작 -->
+      <Custom Action="InstallService" After="InstallFiles">NOT Installed</Custom>
+      <Custom Action="StartService"   After="InstallService">NOT Installed</Custom>
+
+      <!-- 제거 시: 서비스 중지 → 제거 → 프로세스 종료 -->
+      <Custom Action="StopService"    Before="RemoveFiles">REMOVE~="ALL"</Custom>
+      <Custom Action="RemoveService"  After="StopService">REMOVE~="ALL"</Custom>
+      <Custom Action="KillProcess"    After="RemoveService">REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>
+
+  </Package>
+</Wix>
