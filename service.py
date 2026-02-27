@@ -2,7 +2,14 @@
 # Windows 서비스 정의 및 실행
 
 import logging
+import os
+import sys
 import threading
+
+# 서비스 실행 시 exe 디렉터리를 sys.path에 추가 (import 경로 보장)
+_base_dir = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+if _base_dir not in sys.path:
+    sys.path.insert(0, _base_dir)
 
 import servicemanager
 import win32event
@@ -17,8 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _setup_logging():
-    import os
-    log_dir = os.path.join(os.path.dirname(__file__), "logs")
+    log_dir = os.path.join(_base_dir, "logs")
     os.makedirs(log_dir, exist_ok=True)
 
     from logging.handlers import TimedRotatingFileHandler
