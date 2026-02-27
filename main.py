@@ -1,5 +1,5 @@
 # main.py
-# 진입점: 서비스 설치, 제거, 디버그 실행
+# 진입점: exe 실행 시 자동 서비스 설치/시작, 또는 명령어로 관리
 
 import sys
 
@@ -9,10 +9,12 @@ def print_usage():
 PC Inspect Client
 
 사용법:
-  PCInspectClient.exe install   - Windows 서비스 설치
+  PCInspectClient.exe           - 서비스 자동 설치 및 시작
+  PCInspectClient.exe install   - 서비스 설치만
   PCInspectClient.exe start     - 서비스 시작
   PCInspectClient.exe stop      - 서비스 중지
   PCInspectClient.exe remove    - 서비스 제거
+  PCInspectClient.exe status    - 서비스 상태 확인
   PCInspectClient.exe debug     - 서비스 없이 직접 실행 (테스트용)
 """)
 
@@ -38,16 +40,8 @@ def run_debug():
 
     stop_event = threading.Event()
 
-    redis_thread = threading.Thread(
-        target=subscribe_and_run,
-        args=(stop_event,),
-        daemon=True,
-    )
-    update_thread = threading.Thread(
-        target=check_and_update,
-        args=(stop_event,),
-        daemon=True,
-    )
+    redis_thread = threading.Thread(target=subscribe_and_run, args=(stop_event,), daemon=True)
+    update_thread = threading.Thread(target=check_and_update, args=(stop_event,), daemon=True)
 
     redis_thread.start()
     update_thread.start()
@@ -61,10 +55,70 @@ def run_debug():
         update_thread.join(timeout=5)
 
 
+def auto_install_and_start():
+    """exe 더블클릭 시 서비스 자동 설치 및 시작"""
+    import config
+
+    try:
+        import win32serviceutil
+        import win32service
+        from service import PCInspectService
+    except ImportError:
+        print("오류: pywin32가 설치되어 있지 않습니다.")
+        input("엔터를 누르면 종료됩니다...")
+        sys.exit(1)
+
+    print(f"PC Inspect Client v{config.CLIENT_VERSION}")
+    print(f"서비스명: {config.SERVICE_NAME}")
+    print()
+
+    # 서비스 상태 확인
+    try:
+        status = win32serviceutil.QueryServiceStatus(config.SERVICE_NAME)[1]
+        service_exists = True
+    except Exception:
+        service_exists = False
+        status = None
+
+    try:
+        if not service_exists:
+            print("서비스를 설치합니다...")
+            win32serviceutil.InstallService(
+                PCInspectService._svc_reg_class_,
+                config.SERVICE_NAME,
+                config.SERVICE_DISPLAY,
+                startType=win32service.SERVICE_AUTO_START,
+                description=config.SERVICE_DESC,
+            )
+            print("서비스 설치 완료")
+
+        if status != win32service.SERVICE_RUNNING:
+            print("서비스를 시작합니다...")
+            win32serviceutil.StartService(config.SERVICE_NAME)
+            print("서비스 시작 완료")
+        else:
+            print("서비스가 이미 실행 중입니다.")
+
+        print()
+        print(f"✓ {config.SERVICE_DISPLAY} 정상 동작 중")
+
+    except Exception as e:
+        print(f"오류: {e}")
+        print()
+        print("관리자 권한으로 실행해주세요.")
+
+    input("\n엔터를 누르면 종료됩니다...")
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
 
-    if not args or args[0] in ("--help", "-h"):
+    if not args:
+        # 인자 없이 실행 → 자동 설치/시작
+        auto_install_and_start()
+        sys.exit(0)
+
+    if args[0] in ("--help", "-h"):
         print_usage()
         sys.exit(0)
 
@@ -72,12 +126,22 @@ if __name__ == "__main__":
         run_debug()
         sys.exit(0)
 
-    # Windows 서비스 명령 처리 (install / start / stop / remove)
+    if args[0] == "status":
+        try:
+            import win32serviceutil
+            import config
+            status = win32serviceutil.QueryServiceStatus(config.SERVICE_NAME)
+            state = {1: "중지됨", 2: "시작 중", 3: "중지 중", 4: "실행 중"}.get(status[1], "알 수 없음")
+            print(f"{config.SERVICE_NAME}: {state}")
+        except Exception as e:
+            print(f"서비스 상태 확인 실패: {e}")
+        sys.exit(0)
+
+    # install / start / stop / remove 등 win32serviceutil 명령 처리
     try:
         import win32serviceutil
         from service import PCInspectService
         win32serviceutil.HandleCommandLine(PCInspectService)
     except ImportError:
         print("오류: pywin32가 설치되어 있지 않습니다.")
-        print("pip install pywin32")
         sys.exit(1)
