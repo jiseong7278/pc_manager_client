@@ -93,13 +93,13 @@
 
     <InstallExecuteSequence>
       <!-- 설치 시: 서비스 등록 → 시작 -->
-      <Custom Action="InstallService" After="InstallFiles">NOT Installed</Custom>
-      <Custom Action="StartService"   After="InstallService">NOT Installed</Custom>
+      <Custom Action="InstallService" After="InstallFiles"    Condition="NOT Installed" />
+      <Custom Action="StartService"   After="InstallService"  Condition="NOT Installed" />
 
       <!-- 제거 시: 서비스 중지 → 제거 → 프로세스 종료 -->
-      <Custom Action="StopService"    Before="RemoveFiles">REMOVE~="ALL"</Custom>
-      <Custom Action="RemoveService"  After="StopService">REMOVE~="ALL"</Custom>
-      <Custom Action="KillProcess"    After="RemoveService">REMOVE~="ALL"</Custom>
+      <Custom Action="StopService"    Before="RemoveFiles"    Condition="REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="RemoveService"  After="StopService"     Condition="REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="KillProcess"    After="RemoveService"   Condition="REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
 
   </Package>
