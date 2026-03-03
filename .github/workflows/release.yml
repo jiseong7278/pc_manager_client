@@ -81,7 +81,7 @@ jobs:
       # ── 9. WiX Toolset 설치 ──────────────────────────────────────
       - name: Install WiX Toolset
         run: |
-          dotnet tool install --global wix
+          dotnet tool install --global wix --version 5.0.2
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
           wix --version
         shell: powershell
@@ -96,7 +96,9 @@ jobs:
         run: |
           $ver = "${{ steps.version.outputs.version }}"
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
-          wix extension add WixToolset.UI.wixext
+          $wixVer = (wix --version).Trim()
+          Write-Host "WiX version: $wixVer"
+          wix extension add "WixToolset.UI.wixext/$wixVer"
           wix build installer.wxs `
             -ext WixToolset.UI.wixext `
             -d AppVersion=$ver `
