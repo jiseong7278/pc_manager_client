@@ -12,7 +12,7 @@ sys.modules.setdefault("win32service",     MagicMock())
 sys.modules.setdefault("win32event",       MagicMock())
 sys.modules.setdefault("servicemanager",   MagicMock())
 
-from updater import _parse_version, _is_newer, _find_exe_asset
+from updater import _parse_version, _is_newer, _find_msi_asset
 
 
 class TestParseVersion:
@@ -54,31 +54,31 @@ class TestIsNewer:
         assert _is_newer("", "1.0.0") is False
 
 
-class TestFindExeAsset:
+class TestFindMsiAsset:
 
-    def test_finds_exe(self):
+    def test_finds_msi(self):
         assets = [
-            {"name": "PCInspectClient.exe", "browser_download_url": "https://example.com/v1.exe"},
-            {"name": "checksums.txt",        "browser_download_url": "https://example.com/checksums.txt"},
+            {"name": "PCInspectClient_1.0.0.msi", "browser_download_url": "https://example.com/v1.msi"},
+            {"name": "checksums.txt",              "browser_download_url": "https://example.com/checksums.txt"},
         ]
-        result = _find_exe_asset(assets)
+        result = _find_msi_asset(assets)
         assert result is not None
-        assert result["name"] == "PCInspectClient.exe"
+        assert result["name"] == "PCInspectClient_1.0.0.msi"
 
-    def test_returns_none_when_no_exe(self):
+    def test_returns_none_when_no_msi(self):
         assets = [
             {"name": "README.md",      "browser_download_url": "https://example.com/README.md"},
             {"name": "checksums.txt",  "browser_download_url": "https://example.com/checksums.txt"},
         ]
-        assert _find_exe_asset(assets) is None
+        assert _find_msi_asset(assets) is None
 
     def test_empty_assets(self):
-        assert _find_exe_asset([]) is None
+        assert _find_msi_asset([]) is None
 
-    def test_picks_first_exe(self):
+    def test_picks_first_msi(self):
         assets = [
-            {"name": "PCInspectClient_x86.exe", "browser_download_url": "https://example.com/x86.exe"},
-            {"name": "PCInspectClient_x64.exe", "browser_download_url": "https://example.com/x64.exe"},
+            {"name": "PCInspectClient_1.0.0.msi", "browser_download_url": "https://example.com/v1.msi"},
+            {"name": "PCInspectClient_1.0.1.msi", "browser_download_url": "https://example.com/v2.msi"},
         ]
-        result = _find_exe_asset(assets)
-        assert result["name"] == "PCInspectClient_x86.exe"
+        result = _find_msi_asset(assets)
+        assert result["name"] == "PCInspectClient_1.0.0.msi"
