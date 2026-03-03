@@ -10,7 +10,6 @@
     Language="1042"
     Codepage="949"
     InstallerVersion="500"
-    Platform="x64"
     Compressed="yes">
 
     <!-- 기존 버전 자동 업그레이드 -->

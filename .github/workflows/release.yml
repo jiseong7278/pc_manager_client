@@ -101,6 +101,7 @@ jobs:
           wix extension add "WixToolset.UI.wixext/$wixVer"
           wix build installer.wxs dist_files.wxs `
             -ext WixToolset.UI.wixext `
+            -arch x64 `
             -d AppVersion=$ver `
             -o "dist\PCInspectClient_$ver.msi"
 
