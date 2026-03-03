@@ -99,7 +99,7 @@ jobs:
           $wixVer = (wix --version).Trim()
           Write-Host "WiX version: $wixVer"
           wix extension add "WixToolset.UI.wixext/$wixVer"
-          wix build installer.wxs `
+          wix build installer.wxs dist_files.wxs `
             -ext WixToolset.UI.wixext `
             -d AppVersion=$ver `
             -o "dist\PCInspectClient_$ver.msi"

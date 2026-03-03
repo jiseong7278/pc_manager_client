@@ -10,6 +10,7 @@
     Language="1042"
     Codepage="949"
     InstallerVersion="500"
+    Platform="x64"
     Compressed="yes">
 
     <!-- 기존 버전 자동 업그레이드 -->
@@ -44,13 +45,11 @@
               KeyPath="yes" />
       </Component>
 
-      <!-- dist/PCInspectClient/ 폴더의 나머지 파일들 -->
-      <?include dist_files.wxs ?>
-
     </ComponentGroup>
 
     <Feature Id="MainFeature" Title="PC Inspect Client" Level="1">
       <ComponentGroupRef Id="MainComponents" />
+      <ComponentGroupRef Id="DistFileComponents" />
     </Feature>
 
     <!-- 서비스 설치/제거 -->
