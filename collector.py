@@ -6,7 +6,9 @@ import logging
 import platform
 import subprocess
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
 
 logger = logging.getLogger(__name__)
 
@@ -282,11 +284,13 @@ def collect_all() -> dict:
     PC 전체 데이터 수집
     hostname, ip_address는 호출측(redis_client.py)에서 추가
     """
+    import config
     logger.info("PC 데이터 수집 시작")
     data = {
-        "collected_at": datetime.now().isoformat(),
-        "antivirus":    get_antivirus_info(),
-        "hardware":     get_hardware_info(),
+        "collected_at":   datetime.now(KST).isoformat(),
+        "client_version": config.CLIENT_VERSION,
+        "antivirus":      get_antivirus_info(),
+        "hardware":       get_hardware_info(),
     }
     logger.info("PC 데이터 수집 완료")
     return data

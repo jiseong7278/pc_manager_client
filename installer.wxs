@@ -20,7 +20,8 @@
     <MediaTemplate EmbedCab="yes" />
 
     <!-- UI (기본 설치 마법사) -->
-    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER"
+              LicenseSourceFile="license.rtf" />
 
     <!-- 설치 경로 -->
     <StandardDirectory Id="ProgramFiles64Folder">

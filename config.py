@@ -5,7 +5,7 @@
 CLIENT_VERSION = "1.0.0"
 
 # ── Redis 서버 설정 ───────────────────────────────────────────────
-REDIS_HOST    = "127.0.0.1"   # 서버 IP로 변경
+REDIS_HOST    = "192.168.100.112"   # 서버 IP로 변경
 REDIS_PORT    = 6379
 REDIS_CHANNEL = "pc_inspect"    # subscribe 채널
 STREAM_KEY    = "pc_reports"    # stream publish 키
