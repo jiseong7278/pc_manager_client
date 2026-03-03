@@ -287,7 +287,7 @@ def collect_all() -> dict:
     import config
     logger.info("PC 데이터 수집 시작")
     data = {
-        "collected_at":   datetime.now(KST).isoformat(),
+        "collected_at":   datetime.now().isoformat(),
         "client_version": config.CLIENT_VERSION,
         "antivirus":      get_antivirus_info(),
         "hardware":       get_hardware_info(),

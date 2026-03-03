@@ -47,10 +47,11 @@ jobs:
       - name: Inject version into config.py
         run: |
           $ver = "${{ steps.version.outputs.version }}"
-          $content = Get-Content config.py -Raw
-          $content = $content -replace 'CLIENT_VERSION\s*=\s*"[^"]*"', "CLIENT_VERSION = `"$ver`""
-          Set-Content config.py $content
+          (Get-Content config.py -Encoding UTF8) |
+            ForEach-Object { $_ -replace '^CLIENT_VERSION\s*=\s*".*"', "CLIENT_VERSION = `"$ver`"" } |
+            Set-Content config.py -Encoding UTF8
           Write-Host "Injected version: $ver"
+          Get-Content config.py | Select-String "CLIENT_VERSION"
         shell: powershell
 
       # ── 6. 테스트 실행 ───────────────────────────────────────────
