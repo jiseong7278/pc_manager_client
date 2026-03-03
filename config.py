@@ -12,9 +12,9 @@ STREAM_KEY    = "pc_reports"    # stream publish 키
 STREAM_GROUP  = "report_group"
 
 # ── GitHub 자동 업데이트 설정 ─────────────────────────────────────
-GITHUB_REPO       = "YOUR_USERNAME/pc_manager_client"  # GitHub 저장소
+GITHUB_REPO       = "jiseong7278/pc_manager_client"  # GitHub 저장소
 GITHUB_API_URL    = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-UPDATE_CHECK_INTERVAL = 3600   # 업데이트 확인 주기 (초, 기본 1시간)
+UPDATE_CHECK_INTERVAL = 60     # 업데이트 확인 주기 (초, 기본 1분)
 
 # ── 서비스 설정 ───────────────────────────────────────────────────
 SERVICE_NAME    = "PCInspectClient"

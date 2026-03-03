@@ -1,5 +1,5 @@
 # updater.py
-# GitHub Releases에서 최신 exe 자동 다운로드 및 업데이트
+# GitHub Releases에서 최신 MSI 자동 다운로드 및 업데이트
 
 import logging
 import os
@@ -44,52 +44,33 @@ def _is_newer(latest: str, current: str) -> bool:
         return False
 
 
-def _find_exe_asset(assets: list) -> dict | None:
-    """릴리즈 assets 중 .exe 파일 찾기"""
+def _find_msi_asset(assets: list) -> dict | None:
+    """릴리즈 assets 중 .msi 파일 찾기"""
     for asset in assets:
-        if asset.get("name", "").endswith(".exe"):
+        if asset.get("name", "").endswith(".msi"):
             return asset
     return None
 
 
 def _do_update(download_url: str, new_version: str) -> None:
-    """
-    새 exe 다운로드 후 업데이트 스크립트 실행
-    현재 프로세스를 새 exe로 교체하는 방식
-    """
-    current_exe = sys.executable if getattr(sys, "frozen", False) else None
-    if not current_exe:
+    """MSI 다운로드 후 msiexec으로 자동 설치"""
+    if not getattr(sys, "frozen", False):
         logger.warning("스크립트 실행 모드에서는 자동 업데이트 미지원")
         return
 
     try:
-        tmp_dir = tempfile.gettempdir()
-        new_exe = os.path.join(tmp_dir, f"PCInspectClient_{new_version}.exe")
+        tmp_dir  = tempfile.gettempdir()
+        msi_path = os.path.join(tmp_dir, f"PCInspectClient_{new_version}.msi")
 
         logger.info(f"다운로드 중: {download_url}")
-        urllib.request.urlretrieve(download_url, new_exe)
-        logger.info(f"다운로드 완료: {new_exe}")
-
-        bat_path    = os.path.join(tmp_dir, "pc_inspect_update.bat")
-        current_dir = os.path.dirname(current_exe)
-        target_exe  = os.path.join(current_dir, os.path.basename(current_exe))
-
-        bat_content = f"""@echo off
-timeout /t 3 /nobreak > nul
-copy /Y "{new_exe}" "{target_exe}"
-sc stop {config.SERVICE_NAME}
-timeout /t 2 /nobreak > nul
-sc start {config.SERVICE_NAME}
-del "%~f0"
-"""
-        with open(bat_path, "w") as f:
-            f.write(bat_content)
+        urllib.request.urlretrieve(download_url, msi_path)
+        logger.info(f"다운로드 완료: {msi_path}")
 
         subprocess.Popen(
-            ["cmd", "/c", bat_path],
+            ["msiexec", "/i", msi_path, "/qn", "/norestart"],
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
-        logger.info("업데이트 스크립트 실행됨, 서비스 재시작 대기 중")
+        logger.info("MSI 설치 시작됨 (서비스가 자동으로 재시작됩니다)")
 
     except Exception as e:
         logger.error(f"업데이트 실패: {e}")
@@ -115,12 +96,12 @@ def trigger_update() -> None:
     logger.info(f"현재 버전: {current_ver} / 최신 버전: {latest_ver}")
 
     if _is_newer(latest_ver, current_ver):
-        asset = _find_exe_asset(assets)
+        asset = _find_msi_asset(assets)
         if asset:
             logger.info(f"새 버전 발견 ({latest_ver}), 업데이트 시작")
             _do_update(asset["browser_download_url"], latest_ver)
         else:
-            logger.warning("릴리즈에 exe 파일 없음, 업데이트 건너뜀")
+            logger.warning("릴리즈에 msi 파일 없음, 업데이트 건너뜀")
     else:
         logger.info(f"이미 최신 버전({current_ver}), 업데이트 불필요")
 
