@@ -83,8 +83,6 @@ jobs:
         run: |
           dotnet tool install --global wix
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
-          wix extension add --global WixToolset.UI.wixext
-          wix extension add --global WixToolset.Util.wixext
           wix --version
         shell: powershell
 
@@ -98,6 +96,7 @@ jobs:
         run: |
           $ver = "${{ steps.version.outputs.version }}"
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          wix extension add WixToolset.UI.wixext
           wix build installer.wxs `
             -ext WixToolset.UI.wixext `
             -d AppVersion=$ver `
