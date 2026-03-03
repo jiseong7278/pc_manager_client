@@ -104,12 +104,36 @@ def auto_install_and_start():
     input("\n엔터를 누르면 종료됩니다...")
 
 
+def run_as_service():
+    """
+    SCM(서비스 제어 관리자)이 인자 없이 exe를 시작할 때 호출.
+    servicemanager.StartServiceCtrlDispatcher()로 SCM에 연결.
+    SCM이 아닌 일반 실행이면 ERROR_FAILED_SERVICE_CONTROLLER_CONNECT(1063)
+    예외가 발생하므로, 그때는 auto_install_and_start()로 폴백.
+    """
+    try:
+        import servicemanager
+        from service import PCInspectService
+        servicemanager.Initialize()
+        servicemanager.PrepareToHostSingle(PCInspectService)
+        servicemanager.StartServiceCtrlDispatcher()  # SCM 연결 — 서비스 종료까지 블로킹
+    except Exception as e:
+        if getattr(e, "winerror", None) == 1063:
+            # ERROR_FAILED_SERVICE_CONTROLLER_CONNECT: 사용자가 직접 실행
+            auto_install_and_start()
+        else:
+            # pywin32 없거나 기타 오류
+            auto_install_and_start()
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
 
     if not args:
-        # 인자 없이 실행 → 자동 설치/시작
-        auto_install_and_start()
+        # 인자 없이 실행:
+        #   - SCM이 서비스로 기동 → StartServiceCtrlDispatcher 호출
+        #   - 사용자 더블클릭    → auto_install_and_start 폴백
+        run_as_service()
         sys.exit(0)
 
     if args[0] in ("--help", "-h"):
