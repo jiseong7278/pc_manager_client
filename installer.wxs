@@ -60,6 +60,13 @@
                   Impersonate="no"
                   Return="ignore" />
 
+    <CustomAction Id="SetAutoStart"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="sc config PCInspectClient start= auto"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <CustomAction Id="StartService"
                   Directory="INSTALLFOLDER"
                   ExeCommand="&quot;[INSTALLFOLDER]PCInspectClient.exe&quot; start"
@@ -91,7 +98,8 @@
     <InstallExecuteSequence>
       <!-- 설치 시: 서비스 등록 → 시작 -->
       <Custom Action="InstallService" After="InstallFiles"    Condition="NOT Installed" />
-      <Custom Action="StartService"   After="InstallService"  Condition="NOT Installed" />
+      <Custom Action="SetAutoStart"   After="InstallService"  Condition="NOT Installed" />
+      <Custom Action="StartService"   After="SetAutoStart"    Condition="NOT Installed" />
 
       <!-- 제거 시: 서비스 중지 → 제거 → 프로세스 종료 -->
       <Custom Action="StopService"    Before="RemoveFiles"    Condition="REMOVE~=&quot;ALL&quot;" />
