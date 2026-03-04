@@ -163,3 +163,5 @@ if __name__ == "__main__":
     except ImportError:
         print("오류: pywin32가 설치되어 있지 않습니다.")
         sys.exit(1)
+
+        #
