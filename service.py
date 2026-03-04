@@ -44,6 +44,7 @@ class PCInspectService(win32serviceutil.ServiceFramework):
     _svc_name_         = config.SERVICE_NAME
     _svc_display_name_ = config.SERVICE_DISPLAY
     _svc_description_  = config.SERVICE_DESC
+    _svc_start_type_   = win32service.SERVICE_AUTO_START
 
     def __init__(self, args):
         super().__init__(args)
