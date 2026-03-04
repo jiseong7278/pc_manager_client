@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 def _get_latest_release() -> dict | None:
     """GitHub API로 최신 릴리즈 정보 조회"""
     try:
-        req = urllib.request.Request(
-            config.GITHUB_API_URL,
-            headers={"User-Agent": "PCInspectClient"}
-        )
+        headers = {"User-Agent": "PCInspectClient"}
+        if config.GITHUB_TOKEN:
+            headers["Authorization"] = f"Bearer {config.GITHUB_TOKEN}"
+        req = urllib.request.Request(config.GITHUB_API_URL, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as resp:
             import json
             return json.loads(resp.read().decode())

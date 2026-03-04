@@ -54,7 +54,17 @@ jobs:
           Get-Content config.py | Select-String "CLIENT_VERSION"
         shell: powershell
 
-      # ── 6. 테스트 실행 ───────────────────────────────────────────
+      # ── 6. GitHub Token 주입 ────────────────────────────────────────
+      - name: Inject GitHub token into config.py
+        run: |
+          $token = "${{ secrets.GH_UPDATE_TOKEN }}"
+          (Get-Content config.py -Encoding UTF8) |
+            ForEach-Object { $_ -replace '^GITHUB_TOKEN\s*=\s*".*"', "GITHUB_TOKEN = `"$token`"" } |
+            Set-Content config.py -Encoding UTF8
+          Write-Host "GitHub token injected"
+        shell: powershell
+
+      # ── 7. 테스트 실행 ───────────────────────────────────────────
       - name: Run tests
         run: |
           pytest tests/ -v --tb=short

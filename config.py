@@ -14,6 +14,7 @@ STREAM_GROUP  = "report_group"
 # ── GitHub 자동 업데이트 설정 ─────────────────────────────────────
 GITHUB_REPO       = "jiseong7278/pc_manager_client"  # GitHub 저장소
 GITHUB_API_URL    = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_TOKEN      = ""         # GitHub Personal Access Token (빌드 시 자동 주입)
 UPDATE_CHECK_INTERVAL = 300    # 업데이트 확인 주기 (초, 기본 5분)
 
 # ── 서비스 설정 ───────────────────────────────────────────────────
