@@ -9,6 +9,9 @@ import tempfile
 import time
 import urllib.request
 
+import truststore
+truststore.inject_into_ssl()
+
 import config
 
 logger = logging.getLogger(__name__)
