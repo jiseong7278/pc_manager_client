@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 
@@ -15,6 +16,8 @@ truststore.inject_into_ssl()
 import config
 
 logger = logging.getLogger(__name__)
+
+_update_lock = threading.Lock()
 
 
 def _get_latest_release() -> dict | None:
@@ -84,7 +87,17 @@ def trigger_update() -> None:
     서버의 update 명령 수신 시 즉시 업데이트 실행
     주기적 확인 없이 바로 GitHub 릴리즈 확인 후 업데이트
     """
-    logger.info("서버 명령으로 업데이트 시작")
+    if not _update_lock.acquire(blocking=False):
+        logger.info("업데이트가 이미 진행 중입니다. 건너뜁니다.")
+        return
+    try:
+        _do_trigger_update()
+    finally:
+        _update_lock.release()
+
+
+def _do_trigger_update() -> None:
+    logger.info("업데이트 시작")
     release = _get_latest_release()
 
     if not release:

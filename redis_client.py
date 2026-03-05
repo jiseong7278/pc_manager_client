@@ -4,6 +4,7 @@
 import json
 import logging
 import socket
+import threading
 import time
 
 import redis
@@ -13,6 +14,8 @@ from collector import collect_all
 from updater import trigger_update
 
 logger = logging.getLogger(__name__)
+
+_collect_lock = threading.Lock()
 
 
 def get_redis() -> redis.Redis:
@@ -84,6 +87,9 @@ def subscribe_and_run(stop_event) -> None:
 
                 if command == "inspect":
                     logger.info(f"점검 명령 수신 (target={target or 'all'})")
+                    if not _collect_lock.acquire(blocking=False):
+                        logger.warning("수집이 이미 진행 중입니다. 명령 무시")
+                        continue
                     try:
                         data = collect_all()
                         data["hostname"]   = hostname
@@ -91,6 +97,8 @@ def subscribe_and_run(stop_event) -> None:
                         publish_result(data)
                     except Exception as e:
                         logger.error(f"데이터 수집/전송 실패: {e}")
+                    finally:
+                        _collect_lock.release()
 
                 elif command == "update":
                     logger.info(f"업데이트 명령 수신 (target={target or 'all'})")

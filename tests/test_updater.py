@@ -6,11 +6,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from unittest.mock import patch, MagicMock
 
-# Windows 전용 모듈 mock 처리 (GitHub Actions Windows runner에 없을 수 있음)
+# Windows 전용 및 SSL 관련 모듈 mock 처리
 sys.modules.setdefault("win32serviceutil", MagicMock())
 sys.modules.setdefault("win32service",     MagicMock())
 sys.modules.setdefault("win32event",       MagicMock())
 sys.modules.setdefault("servicemanager",   MagicMock())
+sys.modules.setdefault("truststore",       MagicMock())
 
 from updater import _parse_version, _is_newer, _find_msi_asset
 
@@ -82,3 +83,23 @@ class TestFindMsiAsset:
         ]
         result = _find_msi_asset(assets)
         assert result["name"] == "PCInspectClient_1.0.0.msi"
+
+
+class TestUpdateLock:
+
+    def test_trigger_update_skipped_when_lock_held(self):
+        """_update_lock 보유 중에는 trigger_update가 조기 반환 (외부 요청 없음)"""
+        import updater
+        with updater._update_lock:
+            with patch("updater._get_latest_release") as mock_release:
+                updater.trigger_update()
+                mock_release.assert_not_called()
+
+    def test_trigger_update_runs_when_lock_free(self):
+        """락이 비어 있으면 정상 실행되고 락이 해제됨"""
+        import updater
+        with patch("updater._get_latest_release", return_value=None):
+            updater.trigger_update()
+        # 실행 후 락이 해제된 상태여야 함
+        assert updater._update_lock.acquire(blocking=False)
+        updater._update_lock.release()

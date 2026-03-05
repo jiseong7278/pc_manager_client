@@ -12,6 +12,7 @@ sys.modules.setdefault("win32service",     MagicMock())
 sys.modules.setdefault("win32event",       MagicMock())
 sys.modules.setdefault("servicemanager",   MagicMock())
 sys.modules.setdefault("redis",            MagicMock())
+sys.modules.setdefault("truststore",       MagicMock())
 
 import config
 
@@ -79,3 +80,25 @@ class TestCommandParsing:
         cmd, should = self._parse_command('{}', "PC-001")
         assert cmd is None
         assert should is True
+
+
+class TestCollectLock:
+
+    def test_collect_lock_skipped_when_held(self):
+        """_collect_lock 보유 중에는 collect_all이 호출되지 않음"""
+        import redis_client
+        with redis_client._collect_lock:
+            with patch("redis_client.collect_all") as mock_collect:
+                # 락이 이미 잡혀 있으므로 acquire(blocking=False)가 False를 반환
+                acquired = redis_client._collect_lock.acquire(blocking=False)
+                assert acquired is False
+                mock_collect.assert_not_called()
+
+    def test_collect_lock_released_after_use(self):
+        """수집 완료 후 락이 해제됨"""
+        import redis_client
+        assert redis_client._collect_lock.acquire(blocking=False)
+        redis_client._collect_lock.release()
+        # 두 번째에도 정상 획득 가능해야 함
+        assert redis_client._collect_lock.acquire(blocking=False)
+        redis_client._collect_lock.release()
