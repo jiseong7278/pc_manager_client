@@ -82,6 +82,39 @@ class TestCommandParsing:
         assert should is True
 
 
+class TestSaveTokenToRegistry:
+
+    def test_saves_token_and_updates_config(self):
+        """토큰을 레지스트리에 저장하고 config.GITHUB_TOKEN 업데이트"""
+        import winreg as _real_winreg
+        mock_winreg = MagicMock()
+        mock_key    = MagicMock()
+        mock_winreg.CreateKey.return_value.__enter__ = MagicMock(return_value=mock_key)
+        mock_winreg.CreateKey.return_value.__exit__  = MagicMock(return_value=False)
+        mock_winreg.HKEY_LOCAL_MACHINE = _real_winreg.HKEY_LOCAL_MACHINE
+        mock_winreg.REG_SZ             = _real_winreg.REG_SZ
+
+        with patch.dict("sys.modules", {"winreg": mock_winreg}):
+            import redis_client
+            redis_client._save_token_to_registry("ghp_testtoken")
+
+        mock_winreg.CreateKey.assert_called_once()
+        mock_winreg.SetValueEx.assert_any_call(
+            mock_key, "GitHubToken", 0, _real_winreg.REG_SZ, "ghp_testtoken"
+        )
+        assert mock_winreg.SetValueEx.call_count == 2  # token + timestamp
+        assert redis_client.config.GITHUB_TOKEN == "ghp_testtoken"
+
+    def test_registry_error_does_not_raise(self):
+        """레지스트리 저장 실패 시 예외 전파 없이 로그만 남김"""
+        mock_winreg = MagicMock()
+        mock_winreg.CreateKey.side_effect = PermissionError("Access denied")
+
+        with patch.dict("sys.modules", {"winreg": mock_winreg}):
+            import redis_client
+            redis_client._save_token_to_registry("ghp_token")  # 예외 발생 없어야 함
+
+
 class TestCollectLock:
 
     def test_collect_lock_skipped_when_held(self):

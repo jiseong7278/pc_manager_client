@@ -1,6 +1,7 @@
 # updater.py
 # GitHub Releases에서 최신 MSI 자동 다운로드 및 업데이트
 
+import hashlib
 import logging
 import os
 import subprocess
@@ -17,7 +18,26 @@ import config
 
 logger = logging.getLogger(__name__)
 
-_update_lock = threading.Lock()
+_update_lock  = threading.Lock()
+_REGISTRY_KEY = r"SOFTWARE\PCInspector"
+
+
+def _load_token_from_registry() -> None:
+    """레지스트리에 저장된 GitHub Token을 읽어 config.GITHUB_TOKEN에 반영"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
+            token, _ = winreg.QueryValueEx(key, "GitHubToken")
+            if token:
+                config.GITHUB_TOKEN = token
+                logger.debug("레지스트리에서 GitHub Token 로드 완료")
+    except FileNotFoundError:
+        pass  # 키 없음 — 정상 (미설정 상태)
+    except Exception as e:
+        logger.warning(f"레지스트리 GitHub Token 읽기 실패: {e}")
+
+
+_load_token_from_registry()
 
 
 def _get_latest_release() -> dict | None:
@@ -58,8 +78,35 @@ def _find_msi_asset(assets: list) -> dict | None:
     return None
 
 
-def _do_update(download_url: str, new_version: str) -> None:
-    """MSI 다운로드 후 msiexec으로 자동 설치"""
+def _verify_sha256(file_path: str, expected_digest: str) -> bool:
+    """
+    다운로드한 파일의 SHA-256을 계산해 GitHub API digest 값과 비교.
+    expected_digest 형식: "sha256:<hexhash>" (GitHub API assets[].digest)
+    """
+    if not expected_digest.startswith("sha256:"):
+        logger.warning(f"지원하지 않는 digest 형식: {expected_digest!r} — 검증 건너뜀")
+        return True  # 알 수 없는 형식은 차단하지 않음
+
+    expected_hash = expected_digest.split(":", 1)[1].lower()
+    try:
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                sha256.update(chunk)
+        actual_hash = sha256.hexdigest().lower()
+
+        if actual_hash != expected_hash:
+            logger.error(f"SHA-256 불일치: expected={expected_hash} actual={actual_hash}")
+            return False
+        logger.info("SHA-256 검증 성공")
+        return True
+    except Exception as e:
+        logger.error(f"SHA-256 검증 실패: {e}")
+        return False
+
+
+def _do_update(download_url: str, new_version: str, digest: str = "") -> None:
+    """MSI 다운로드 → SHA-256 검증 (digest 있을 때) → msiexec으로 자동 설치"""
     if not getattr(sys, "frozen", False):
         logger.warning("스크립트 실행 모드에서는 자동 업데이트 미지원")
         return
@@ -71,6 +118,17 @@ def _do_update(download_url: str, new_version: str) -> None:
         logger.info(f"다운로드 중: {download_url}")
         urllib.request.urlretrieve(download_url, msi_path)
         logger.info(f"다운로드 완료: {msi_path}")
+
+        if digest:
+            if not _verify_sha256(msi_path, digest):
+                logger.error("무결성 검증 실패 — 업데이트 중단")
+                try:
+                    os.remove(msi_path)
+                except Exception:
+                    pass
+                return
+        else:
+            logger.warning("digest 없음 — 무결성 검증 건너뜀")
 
         subprocess.Popen(
             ["msiexec", "/i", msi_path, "/qn", "/norestart"],
@@ -115,7 +173,8 @@ def _do_trigger_update() -> None:
         asset = _find_msi_asset(assets)
         if asset:
             logger.info(f"새 버전 발견 ({latest_ver}), 업데이트 시작")
-            _do_update(asset["browser_download_url"], latest_ver)
+            digest = asset.get("digest", "")  # GitHub API가 자동 생성 (예: "sha256:abc123...")
+            _do_update(asset["browser_download_url"], latest_ver, digest)
         else:
             logger.warning("릴리즈에 msi 파일 없음, 업데이트 건너뜀")
     else:

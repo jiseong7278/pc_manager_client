@@ -6,6 +6,7 @@ import logging
 import socket
 import threading
 import time
+from datetime import datetime
 
 import redis
 
@@ -17,15 +18,55 @@ logger = logging.getLogger(__name__)
 
 _collect_lock = threading.Lock()
 
+_REGISTRY_KEY = r"SOFTWARE\PCInspector"
+
+
+def _save_token_to_registry(token: str) -> None:
+    """GitHub Token과 업데이트 시각을 레지스트리 HKLM\SOFTWARE\PCInspector에 저장"""
+    try:
+        import winreg
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
+            winreg.SetValueEx(key, "GitHubToken",          0, winreg.REG_SZ, token)
+            winreg.SetValueEx(key, "GitHubTokenUpdatedAt", 0, winreg.REG_SZ, now)
+        config.GITHUB_TOKEN = token
+        logger.info("GitHub Token 레지스트리 저장 완료")
+    except Exception as e:
+        logger.error(f"GitHub Token 레지스트리 저장 실패: {e}")
+
+
+def _get_token_info() -> dict:
+    """레지스트리에서 GitHub Token 존재 여부와 최종 업데이트 시각 조회"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
+            token, _ = winreg.QueryValueEx(key, "GitHubToken")
+            token_exists = bool(token)
+            try:
+                updated_at, _ = winreg.QueryValueEx(key, "GitHubTokenUpdatedAt")
+            except FileNotFoundError:
+                updated_at = ""
+        return {"token_exists": token_exists, "token_updated_at": updated_at}
+    except FileNotFoundError:
+        return {"token_exists": False, "token_updated_at": ""}
+    except Exception as e:
+        logger.warning(f"Token 정보 조회 실패: {e}")
+        return {"token_exists": False, "token_updated_at": ""}
+
 
 def get_redis() -> redis.Redis:
-    return redis.Redis(
+    kwargs: dict = dict(
         host=config.REDIS_HOST,
         port=config.REDIS_PORT,
         decode_responses=True,
         socket_connect_timeout=5,
         socket_timeout=5,
     )
+    if config.REDIS_PASSWORD:
+        kwargs["password"] = config.REDIS_PASSWORD
+    if config.REDIS_TLS_ENABLED:
+        kwargs["ssl"] = True
+    return redis.Redis(**kwargs)
 
 
 def publish_result(data: dict) -> None:
@@ -94,6 +135,7 @@ def subscribe_and_run(stop_event) -> None:
                         data = collect_all()
                         data["hostname"]   = hostname
                         data["ip_address"] = _get_ip_address()
+                        data.update(_get_token_info())
                         publish_result(data)
                     except Exception as e:
                         logger.error(f"데이터 수집/전송 실패: {e}")
@@ -106,6 +148,13 @@ def subscribe_and_run(stop_event) -> None:
                         trigger_update()
                     except Exception as e:
                         logger.error(f"업데이트 실행 실패: {e}")
+
+                elif command == "set_token":
+                    token = payload.get("token", "")
+                    if token:
+                        _save_token_to_registry(token)
+                    else:
+                        logger.warning("set_token 명령에 token 값 없음, 무시")
 
                 else:
                     logger.warning(f"알 수 없는 명령: {command!r}")
