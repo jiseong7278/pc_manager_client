@@ -258,9 +258,14 @@ def subscribe_and_run(stop_event) -> None:
 
                 command = payload.get("command")
                 target  = payload.get("target")
+                targets = payload.get("targets")  # 다중 타겟 리스트
 
-                # target이 지정된 경우 내 호스트명과 일치할 때만 실행
+                # 단일 target이 지정된 경우 내 호스트명과 일치할 때만 실행
                 if target and target != hostname:
+                    continue
+
+                # targets 리스트가 지정된 경우 내 호스트명이 포함될 때만 실행
+                if targets and hostname not in targets:
                     continue
 
                 if command == "inspect":
