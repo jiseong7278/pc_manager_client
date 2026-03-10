@@ -17,7 +17,7 @@ import win32service
 import win32serviceutil
 
 import config
-from redis_client import subscribe_and_run
+from redis_client import subscribe_and_run, send_heartbeat, _get_ip_address
 from updater import check_and_update
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,10 @@ class PCInspectService(win32serviceutil.ServiceFramework):
         self._run()
 
     def _run(self):
+        import socket
+        hostname   = socket.gethostname()
+        ip_address = _get_ip_address()
+
         # Redis 구독 스레드
         redis_thread = threading.Thread(
             target=subscribe_and_run,
@@ -90,10 +94,21 @@ class PCInspectService(win32serviceutil.ServiceFramework):
         update_thread.start()
         logger.info("자동 업데이트 스레드 시작")
 
+        # Heartbeat 스레드
+        heartbeat_thread = threading.Thread(
+            target=send_heartbeat,
+            args=(hostname, ip_address, self._stop_event),
+            name="Heartbeat",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+        logger.info("Heartbeat 스레드 시작")
+
         # 서비스 중지 신호 대기
         win32event.WaitForSingleObject(self._hWaitStop, win32event.INFINITE)
 
         # 스레드 종료 대기 (최대 10초)
         redis_thread.join(timeout=10)
         update_thread.join(timeout=10)
+        heartbeat_thread.join(timeout=5)
         logger.info("서비스 종료 완료")

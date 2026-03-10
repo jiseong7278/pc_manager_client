@@ -19,6 +19,14 @@ GITHUB_API_URL    = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest
 GITHUB_TOKEN      = ""         # GitHub Personal Access Token (빌드 시 자동 주입)
 UPDATE_CHECK_INTERVAL = 300    # 업데이트 확인 주기 (초, 기본 5분)
 
+# ── HMAC 서명 설정 ────────────────────────────────────────────────
+# 서버의 HMAC_SECRET과 동일한 값으로 설정. 비워두면 서명 없이 전송
+HMAC_SECRET = ""
+
+# ── Heartbeat 설정 ────────────────────────────────────────────────
+HEARTBEAT_INTERVAL = 60                     # heartbeat 전송 주기 (초)
+HEARTBEAT_KEY      = "pc_heartbeats:data"  # Redis Hash 키
+
 # ── 서비스 설정 ───────────────────────────────────────────────────
 SERVICE_NAME    = "PCInspectClient"
 SERVICE_DISPLAY = f"PC Inspect Client v{CLIENT_VERSION}"
