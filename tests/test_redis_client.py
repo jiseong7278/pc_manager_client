@@ -82,6 +82,239 @@ class TestCommandParsing:
         assert should is True
 
 
+class TestTargetsListParsing:
+    """subscribe_and_run의 targets 리스트 필터링 로직 단위 테스트"""
+
+    def _parse_command(self, raw: str, my_hostname: str) -> tuple[str | None, bool]:
+        """
+        실제 subscribe_and_run의 파싱 로직 (targets 포함) 추출
+        returns (command, should_execute)
+        """
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None, False
+
+        if not isinstance(payload, dict):
+            return None, False
+
+        command = payload.get("command")
+        target  = payload.get("target")
+        targets = payload.get("targets")
+
+        if target and target != my_hostname:
+            return command, False
+
+        if targets and my_hostname not in targets:
+            return command, False
+
+        return command, True
+
+    def test_targets_list_hostname_included_executes(self):
+        """targets 리스트에 내 호스트명이 포함되면 실행"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "targets": ["PC-001", "PC-002", "PC-003"]}',
+            "PC-002",
+        )
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_targets_list_hostname_not_included_skipped(self):
+        """targets 리스트에 내 호스트명이 없으면 건너뜀"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "targets": ["PC-001", "PC-003"]}',
+            "PC-002",
+        )
+        assert cmd == "inspect"
+        assert should is False
+
+    def test_targets_list_single_element_matching(self):
+        """단일 요소 targets 리스트에서 호스트명 일치 시 실행"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "targets": ["PC-001"]}',
+            "PC-001",
+        )
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_targets_list_single_element_not_matching(self):
+        """단일 요소 targets 리스트에서 호스트명 불일치 시 건너뜀"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "targets": ["PC-001"]}',
+            "PC-002",
+        )
+        assert cmd == "inspect"
+        assert should is False
+
+    def test_targets_empty_list_treated_as_broadcast(self):
+        """targets가 빈 리스트이면 필터 없이 실행 (falsy → 분기 미적용)"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "targets": []}',
+            "PC-001",
+        )
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_no_target_no_targets_is_broadcast(self):
+        """target/targets 모두 없으면 브로드캐스트 → 실행"""
+        cmd, should = self._parse_command('{"command": "inspect"}', "ANY-PC")
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_target_takes_precedence_over_targets_when_target_mismatches(self):
+        """target 불일치 시, targets에 포함돼도 target 기준으로 건너뜀"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "target": "PC-999", "targets": ["PC-001", "PC-002"]}',
+            "PC-001",
+        )
+        assert cmd == "inspect"
+        assert should is False  # target 체크가 먼저
+
+    def test_target_matches_but_not_in_targets_is_skipped(self):
+        """target 일치해도 targets 리스트에 없으면 건너뜀 (두 체크 독립 적용)"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "target": "PC-001", "targets": ["PC-002", "PC-003"]}',
+            "PC-001",
+        )
+        assert cmd == "inspect"
+        assert should is False  # targets 필터에서 걸림
+
+    def test_targets_with_update_command(self):
+        """update 명령에도 targets 필터가 동일하게 적용됨"""
+        cmd, should = self._parse_command(
+            '{"command": "update", "targets": ["PC-010", "PC-011"]}',
+            "PC-010",
+        )
+        assert cmd == "update"
+        assert should is True
+
+    def test_targets_with_update_command_not_matching(self):
+        """update 명령에서 targets에 없으면 건너뜀"""
+        cmd, should = self._parse_command(
+            '{"command": "update", "targets": ["PC-010", "PC-011"]}',
+            "PC-001",
+        )
+        assert cmd == "update"
+        assert should is False
+
+
+class TestCommandSignatureVerification:
+    """Pub-Sub 수신 메시지의 HMAC 서명 검증 로직 테스트"""
+
+    def _parse_with_sig_check(self, raw: str, my_hostname: str, hmac_secret: str = "") -> tuple[str | None, bool]:
+        """
+        subscribe_and_run의 서명 검증 + 파싱 로직 추출
+        returns (command, should_execute)
+        """
+        import hashlib
+        import hmac as _hmac
+
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None, False
+
+        if not isinstance(payload, dict):
+            return None, False
+
+        # HMAC 검증
+        if hmac_secret:
+            sig = payload.get("sig", "")
+            msg_without_sig = {k: v for k, v in payload.items() if k != "sig"}
+            msg_canonical   = json.dumps(msg_without_sig, sort_keys=True)
+            expected = _hmac.new(
+                hmac_secret.encode(), msg_canonical.encode(), hashlib.sha256
+            ).hexdigest()
+            if not _hmac.compare_digest(sig, expected):
+                return payload.get("command"), False
+
+        command = payload.get("command")
+        target  = payload.get("target")
+        targets = payload.get("targets")
+
+        if target and target != my_hostname:
+            return command, False
+        if targets and my_hostname not in targets:
+            return command, False
+
+        return command, True
+
+    def _make_signed_msg(self, payload: dict, secret: str) -> str:
+        """테스트용 서명 메시지 생성"""
+        import hashlib, hmac as _hmac
+        canonical = json.dumps(payload, sort_keys=True)
+        sig = _hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+        return json.dumps({**payload, "sig": sig})
+
+    def test_valid_signature_accepted(self):
+        """올바른 서명이면 명령 실행"""
+        msg = self._make_signed_msg({"command": "inspect"}, "secret123")
+        cmd, should = self._parse_with_sig_check(msg, "PC-001", hmac_secret="secret123")
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_invalid_signature_rejected(self):
+        """잘못된 서명이면 명령 무시"""
+        payload = json.dumps({"command": "inspect", "sig": "badhash"})
+        cmd, should = self._parse_with_sig_check(payload, "PC-001", hmac_secret="secret123")
+        assert cmd == "inspect"
+        assert should is False
+
+    def test_missing_signature_rejected_when_secret_set(self):
+        """시크릿이 있는데 sig 필드 없으면 거부"""
+        payload = json.dumps({"command": "inspect"})
+        cmd, should = self._parse_with_sig_check(payload, "PC-001", hmac_secret="secret123")
+        assert cmd == "inspect"
+        assert should is False
+
+    def test_no_secret_accepts_unsigned_message(self):
+        """시크릿 없으면 서명 없는 메시지도 수락 (기존 동작 유지)"""
+        payload = json.dumps({"command": "inspect"})
+        cmd, should = self._parse_with_sig_check(payload, "PC-001", hmac_secret="")
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_set_secret_accepted_before_first_secret(self):
+        """시크릿 미설정 상태에서 set_secret 명령은 검증 없이 수락"""
+        payload = json.dumps({"command": "set_secret", "secret": "newsecret"})
+        cmd, should = self._parse_with_sig_check(payload, "PC-001", hmac_secret="")
+        assert cmd == "set_secret"
+        assert should is True
+
+    def test_signed_set_token_accepted(self):
+        """서명된 set_token 명령 수락"""
+        msg = self._make_signed_msg({"command": "set_token", "token": "ghp_abc"}, "mysecret")
+        cmd, should = self._parse_with_sig_check(msg, "PC-001", hmac_secret="mysecret")
+        assert cmd == "set_token"
+        assert should is True
+
+    def test_unsigned_set_token_rejected_when_secret_set(self):
+        """시크릿 있는데 서명 없는 set_token 거부"""
+        payload = json.dumps({"command": "set_token", "token": "ghp_abc"})
+        cmd, should = self._parse_with_sig_check(payload, "PC-001", hmac_secret="mysecret")
+        assert cmd == "set_token"
+        assert should is False
+
+    def test_signature_with_target_field(self):
+        """target 필드 포함 서명 메시지 검증"""
+        msg = self._make_signed_msg({"command": "inspect", "target": "PC-001"}, "secret")
+        cmd, should = self._parse_with_sig_check(msg, "PC-001", hmac_secret="secret")
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_tampered_message_rejected(self):
+        """서명 후 command 필드가 변조된 메시지 거부"""
+        # 정상 서명
+        msg_dict = json.loads(self._make_signed_msg({"command": "inspect"}, "secret"))
+        # 변조: command를 update로 바꿈
+        msg_dict["command"] = "update"
+        cmd, should = self._parse_with_sig_check(
+            json.dumps(msg_dict), "PC-001", hmac_secret="secret"
+        )
+        assert cmd == "update"
+        assert should is False  # 서명 불일치
+
+
 class TestSaveTokenToRegistry:
 
     def test_saves_token_and_updates_config(self):

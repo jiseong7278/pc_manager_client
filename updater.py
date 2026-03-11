@@ -105,7 +105,27 @@ def _verify_sha256(file_path: str, expected_digest: str) -> bool:
         return False
 
 
-def _do_update(download_url: str, new_version: str, digest: str = "") -> None:
+def _download_msi(url: str, dest: str) -> None:
+    """
+    MSI 파일 다운로드.
+    토큰이 있으면 GitHub API URL + Bearer 인증으로 다운로드 (비공개 저장소 지원).
+    토큰이 없으면 browser_download_url을 직접 사용.
+    """
+    headers = {"User-Agent": "PCInspectClient"}
+    if config.GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {config.GITHUB_TOKEN}"
+        headers["Accept"]        = "application/octet-stream"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        with open(dest, "wb") as f:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+
+def _do_update(download_url: str, new_version: str, digest: str = "", api_url: str = "") -> None:
     """MSI 다운로드 → SHA-256 검증 (digest 있을 때) → msiexec으로 자동 설치"""
     if not getattr(sys, "frozen", False):
         logger.warning("스크립트 실행 모드에서는 자동 업데이트 미지원")
@@ -115,8 +135,10 @@ def _do_update(download_url: str, new_version: str, digest: str = "") -> None:
         tmp_dir  = tempfile.gettempdir()
         msi_path = os.path.join(tmp_dir, f"PCInspectClient_{new_version}.msi")
 
-        logger.info(f"다운로드 중: {download_url}")
-        urllib.request.urlretrieve(download_url, msi_path)
+        # 토큰이 있으면 API URL(비공개 저장소 가능), 없으면 browser URL(공개 저장소)
+        effective_url = api_url if (api_url and config.GITHUB_TOKEN) else download_url
+        logger.info(f"다운로드 중: {effective_url}")
+        _download_msi(effective_url, msi_path)
         logger.info(f"다운로드 완료: {msi_path}")
 
         if digest:
@@ -174,7 +196,12 @@ def _do_trigger_update() -> None:
         if asset:
             logger.info(f"새 버전 발견 ({latest_ver}), 업데이트 시작")
             digest = asset.get("digest", "")  # GitHub API가 자동 생성 (예: "sha256:abc123...")
-            _do_update(asset["browser_download_url"], latest_ver, digest)
+            _do_update(
+                asset["browser_download_url"],
+                latest_ver,
+                digest,
+                api_url=asset.get("url", ""),  # 비공개 저장소용 API URL
+            )
         else:
             logger.warning("릴리즈에 msi 파일 없음, 업데이트 건너뜀")
     else:

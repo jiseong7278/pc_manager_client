@@ -182,7 +182,7 @@ def _get_os_info() -> dict:
         }
     except Exception as e:
         logger.warning(f"OS 정보 수집 실패: {e}")
-        return {"name": platform.system(), "version": platform.version()}
+        return {"name": platform.system(), "version": platform.version(), "error": str(e)}
 
 
 def _get_cpu_info() -> dict:
@@ -205,7 +205,7 @@ def _get_cpu_info() -> dict:
         }
     except Exception as e:
         logger.warning(f"CPU 정보 수집 실패: {e}")
-        return {"name": "Unknown"}
+        return {"name": "Unknown", "error": str(e)}
 
 
 def _get_gpu_info() -> list:
@@ -250,7 +250,7 @@ def _get_ram_info() -> dict:
         }
     except Exception as e:
         logger.warning(f"RAM 정보 수집 실패: {e}")
-        return {}
+        return {"error": str(e)}
 
 
 def _get_disk_info() -> list:
@@ -286,12 +286,29 @@ def collect_all() -> dict:
     """
     import config
     logger.info("PC 데이터 수집 시작")
+
+    antivirus = get_antivirus_info()
+    hardware  = get_hardware_info()
+
+    # 각 섹션의 오류 집계
+    errors = []
+    if antivirus.get("status") == "error":
+        errors.append({"section": "antivirus", "message": antivirus.get("message", "")})
+    for section in ("os", "cpu", "ram"):
+        err = hardware.get(section, {}).get("error")
+        if err:
+            errors.append({"section": f"hardware.{section}", "message": err})
+
     data = {
         "collected_at":   datetime.now().isoformat(),
         "client_version": config.CLIENT_VERSION,
-        "antivirus":      get_antivirus_info(),
-        "hardware":       get_hardware_info(),
+        "antivirus":      antivirus,
+        "hardware":       hardware,
     }
+    if errors:
+        data["collection_errors"] = errors
+        logger.warning(f"수집 오류 {len(errors)}건: {[e['section'] for e in errors]}")
+
     logger.info("PC 데이터 수집 완료")
     return data
 

@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 _collect_lock = threading.Lock()
 
 _REGISTRY_KEY       = r"SOFTWARE\PCInspector"
+
+# Redis 재연결 백오프 시퀀스 (초): 5 → 10 → 30 → 60 → 120 후 유지
+_RETRY_DELAYS = [5, 10, 30, 60, 120]
 _FAILED_REPORTS_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "failed_reports.json"
 )
@@ -214,6 +217,8 @@ def send_heartbeat(hostname: str, ip_address: str, stop_event: threading.Event) 
                 }, ensure_ascii=False)
                 r.hset(config.HEARTBEAT_KEY, hostname, beat_data)
                 logger.debug(f"Heartbeat 전송: {hostname}")
+                # Redis 연결 성공 시 캐싱된 실패 보고서도 재전송
+                _retry_failed_reports(r)
             finally:
                 r.close()
         except Exception as e:
@@ -228,16 +233,18 @@ def subscribe_and_run(stop_event) -> None:
       inspect - PC 데이터 수집 후 Stream 전송
       update  - 클라이언트 업데이트 실행
     """
-    hostname = socket.gethostname()
+    hostname    = socket.gethostname()
+    retry_count = 0
 
     while not stop_event.is_set():
-        r = None
+        r      = None
         pubsub = None
         try:
             r = get_redis()
             pubsub = r.pubsub()
             pubsub.subscribe(config.REDIS_CHANNEL)
             logger.info(f"Redis 채널 구독 시작: {config.REDIS_CHANNEL}")
+            retry_count = 0  # 연결 성공 시 카운터 초기화
 
             for message in pubsub.listen():
                 if stop_event.is_set():
@@ -255,6 +262,22 @@ def subscribe_and_run(stop_event) -> None:
                 if not isinstance(payload, dict):
                     logger.warning(f"메시지가 dict가 아님: {type(payload)}")
                     continue
+
+                # HMAC 서명 검증 (시크릿이 등록된 경우)
+                # sig 필드를 제외한 나머지를 sort_keys 직렬화로 검증
+                hmac_secret = _get_hmac_secret()
+                if hmac_secret:
+                    sig = payload.get("sig", "")
+                    msg_without_sig = {k: v for k, v in payload.items() if k != "sig"}
+                    msg_canonical   = json.dumps(msg_without_sig, sort_keys=True)
+                    expected = _hmac_module.new(
+                        hmac_secret.encode(), msg_canonical.encode(), hashlib.sha256
+                    ).hexdigest()
+                    if not _hmac_module.compare_digest(sig, expected):
+                        logger.warning(
+                            f"명령 서명 검증 실패, 무시 | command={payload.get('command')}"
+                        )
+                        continue
 
                 command = payload.get("command")
                 target  = payload.get("target")
@@ -309,11 +332,15 @@ def subscribe_and_run(stop_event) -> None:
                     logger.warning(f"알 수 없는 명령: {command!r}")
 
         except redis.ConnectionError as e:
-            logger.error(f"Redis 연결 실패: {e} - 5초 후 재시도")
-            time.sleep(5)
+            delay = _RETRY_DELAYS[min(retry_count, len(_RETRY_DELAYS) - 1)]
+            logger.error(f"Redis 연결 실패: {e} - {delay}초 후 재시도 (#{retry_count + 1})")
+            retry_count += 1
+            stop_event.wait(delay)
         except Exception as e:
-            logger.error(f"예상치 못한 오류: {e} - 5초 후 재시도")
-            time.sleep(5)
+            delay = _RETRY_DELAYS[min(retry_count, len(_RETRY_DELAYS) - 1)]
+            logger.error(f"예상치 못한 오류: {e} - {delay}초 후 재시도 (#{retry_count + 1})")
+            retry_count += 1
+            stop_event.wait(delay)
         finally:
             try:
                 if pubsub:
