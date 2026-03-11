@@ -217,8 +217,9 @@ class TestCommandSignatureVerification:
         if not isinstance(payload, dict):
             return None, False
 
-        # HMAC 검증
-        if hmac_secret:
+        # HMAC 검증 (set_secret / set_token 은 부트스트랩 명령이므로 제외)
+        _cmd_raw = payload.get("command")
+        if hmac_secret and _cmd_raw not in ("set_secret", "set_token"):
             sig = payload.get("sig", "")
             msg_without_sig = {k: v for k, v in payload.items() if k != "sig"}
             msg_canonical   = json.dumps(msg_without_sig, sort_keys=True)
@@ -281,6 +282,13 @@ class TestCommandSignatureVerification:
         assert cmd == "set_secret"
         assert should is True
 
+    def test_unsigned_set_secret_allowed_even_when_secret_set(self):
+        """set_secret 은 부트스트랩 명령 — 기존 시크릿 있어도 서명 없이 수락 (시크릿 교체 가능)"""
+        payload = json.dumps({"command": "set_secret", "secret": "newsecret"})
+        cmd, should = self._parse_with_sig_check(payload, "PC-001", hmac_secret="oldsecret")
+        assert cmd == "set_secret"
+        assert should is True
+
     def test_signed_set_token_accepted(self):
         """서명된 set_token 명령 수락"""
         msg = self._make_signed_msg({"command": "set_token", "token": "ghp_abc"}, "mysecret")
@@ -288,12 +296,12 @@ class TestCommandSignatureVerification:
         assert cmd == "set_token"
         assert should is True
 
-    def test_unsigned_set_token_rejected_when_secret_set(self):
-        """시크릿 있는데 서명 없는 set_token 거부"""
+    def test_unsigned_set_token_allowed_even_when_secret_set(self):
+        """set_token 은 부트스트랩 명령 — 시크릿 있어도 서명 없이 수락"""
         payload = json.dumps({"command": "set_token", "token": "ghp_abc"})
         cmd, should = self._parse_with_sig_check(payload, "PC-001", hmac_secret="mysecret")
         assert cmd == "set_token"
-        assert should is False
+        assert should is True
 
     def test_signature_with_target_field(self):
         """target 필드 포함 서명 메시지 검증"""

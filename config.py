@@ -7,7 +7,7 @@ CLIENT_VERSION = "1.0.0"
 # ── Redis 서버 설정 ───────────────────────────────────────────────
 REDIS_HOST        = "it-team"   # 서버 호스트명 또는 IP
 REDIS_PORT        = 6379
-REDIS_PASSWORD    = "c92b10282778c229265af6ad91d2eb7206622dab17dce848f257c3fb7dc8d1e6"          # Redis 비밀번호 (설정된 경우 입력)
+REDIS_PASSWORD    = ""  # 빌드 시 secrets.REDIS_PASSWORD 자동 주입
 REDIS_TLS_ENABLED = False        # Redis TLS 활성화 여부
 REDIS_CHANNEL     = "pc_inspect"    # subscribe 채널
 STREAM_KEY        = "pc_reports"    # stream publish 키

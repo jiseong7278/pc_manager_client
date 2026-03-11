@@ -264,9 +264,11 @@ def subscribe_and_run(stop_event) -> None:
                     continue
 
                 # HMAC 서명 검증 (시크릿이 등록된 경우)
+                # set_secret / set_token 은 시크릿 부트스트랩 명령이므로 검증 제외
                 # sig 필드를 제외한 나머지를 sort_keys 직렬화로 검증
+                _cmd_raw    = payload.get("command")
                 hmac_secret = _get_hmac_secret()
-                if hmac_secret:
+                if hmac_secret and _cmd_raw not in ("set_secret", "set_token"):
                     sig = payload.get("sig", "")
                     msg_without_sig = {k: v for k, v in payload.items() if k != "sig"}
                     msg_canonical   = json.dumps(msg_without_sig, sort_keys=True)
@@ -275,7 +277,7 @@ def subscribe_and_run(stop_event) -> None:
                     ).hexdigest()
                     if not _hmac_module.compare_digest(sig, expected):
                         logger.warning(
-                            f"명령 서명 검증 실패, 무시 | command={payload.get('command')}"
+                            f"명령 서명 검증 실패, 무시 | command={_cmd_raw}"
                         )
                         continue
 

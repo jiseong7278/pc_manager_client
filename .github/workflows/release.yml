@@ -64,6 +64,16 @@ jobs:
           Write-Host "GitHub token injected"
         shell: powershell
 
+      # ── 6-1. Redis 비밀번호 주입 ─────────────────────────────────
+      - name: Inject Redis password into config.py
+        run: |
+          $pw = "${{ secrets.REDIS_PASSWORD }}"
+          (Get-Content config.py -Encoding UTF8) |
+            ForEach-Object { $_ -replace '^REDIS_PASSWORD\s*=\s*".*"', "REDIS_PASSWORD = `"$pw`"" } |
+            Set-Content config.py -Encoding UTF8
+          Write-Host "Redis password injected"
+        shell: powershell
+
       # ── 7. 테스트 실행 ───────────────────────────────────────────
       - name: Run tests
         run: |
