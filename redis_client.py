@@ -317,6 +317,10 @@ def subscribe_and_run(stop_event) -> None:
                         logger.error(f"업데이트 실행 실패: {e}")
 
                 elif command == "set_token":
+                    token_type = payload.get("token_type", "")
+                    if token_type != "pc":
+                        logger.debug(f"set_token 무시: token_type={token_type!r} (PC 전용 아님)")
+                        continue
                     token = payload.get("token", "")
                     if token:
                         _save_token_to_registry(token)
