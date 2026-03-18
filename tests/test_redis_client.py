@@ -243,7 +243,7 @@ class TestCommandSignatureVerification:
     def _make_signed_msg(self, payload: dict, secret: str) -> str:
         """테스트용 서명 메시지 생성"""
         import hashlib, hmac as _hmac
-        canonical = json.dumps(payload, sort_keys=True)
+        canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'))
         sig = _hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
         return json.dumps({**payload, "sig": sig})
 
