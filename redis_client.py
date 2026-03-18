@@ -271,7 +271,7 @@ def subscribe_and_run(stop_event) -> None:
                 if hmac_secret and _cmd_raw not in ("set_secret", "set_token"):
                     sig = payload.get("sig", "")
                     msg_without_sig = {k: v for k, v in payload.items() if k != "sig"}
-                    msg_canonical   = json.dumps(msg_without_sig, sort_keys=True)
+                    msg_canonical   = json.dumps(msg_without_sig, sort_keys=True, separators=(',', ':'))
                     expected = _hmac_module.new(
                         hmac_secret.encode(), msg_canonical.encode(), hashlib.sha256
                     ).hexdigest()
