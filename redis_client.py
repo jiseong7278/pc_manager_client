@@ -206,6 +206,10 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
     """
     주기적으로 heartbeat를 서버 WebSocket으로 전송하는 루프.
     서버가 접속/해제 시점을 즉시 감지해 온라인 PC 목록을 관리한다.
+
+    stop_event.wait() 대신 1초 단위로 ws.recv()를 호출해
+    서버의 WebSocket PING 프레임에 PONG을 자동 응답한다.
+    (uvicorn/websockets는 기본 20초마다 PING 전송 — 무응답 시 연결 종료)
     """
     sep = "&" if "?" in config.SERVER_WS_URL else "?"
     url = f"{config.SERVER_WS_URL}{sep}device_type=pc"
@@ -219,19 +223,27 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
         try:
             ws = _ws.WebSocket()
             ws.connect(url, timeout=10)
+            ws.settimeout(1)  # recv() 1초 대기 후 타임아웃 → PING 응답 루프용
             logger.info(f"Heartbeat WS 연결: {config.SERVER_WS_URL}")
             retry_count = 0
 
+            next_beat = time.monotonic()
             while not stop_event.is_set():
-                beat = json.dumps({
-                    "type":       "heartbeat",
-                    "hostname":   hostname,
-                    "ip_address": ip_address,
-                    "version":    config.CLIENT_VERSION,
-                }, ensure_ascii=False)
-                ws.send(beat)
-                logger.debug(f"Heartbeat WS 전송: {hostname}")
-                stop_event.wait(config.HEARTBEAT_INTERVAL)
+                now = time.monotonic()
+                if now >= next_beat:
+                    beat = json.dumps({
+                        "type":       "heartbeat",
+                        "hostname":   hostname,
+                        "ip_address": ip_address,
+                        "version":    config.CLIENT_VERSION,
+                    }, ensure_ascii=False)
+                    ws.send(beat)
+                    logger.debug(f"Heartbeat WS 전송: {hostname}")
+                    next_beat = now + config.HEARTBEAT_INTERVAL
+                try:
+                    ws.recv()  # 수신 프레임 소비; PING → 자동 PONG 응답
+                except _ws.WebSocketTimeoutException:
+                    pass  # 1초 내 프레임 없음 — 정상
 
         except Exception as e:
             delay = _RETRY_DELAYS[min(retry_count, len(_RETRY_DELAYS) - 1)]

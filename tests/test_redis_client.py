@@ -547,6 +547,15 @@ class TestSetSecretCommand:
 
 class TestSendHeartbeatWs:
 
+    def _make_ws_module(self):
+        """WebSocketTimeoutException이 실제 예외 클래스인 mock ws 모듈 반환"""
+        class _WSTimeout(Exception):
+            pass
+
+        mock_ws_module = MagicMock()
+        mock_ws_module.WebSocketTimeoutException = _WSTimeout
+        return mock_ws_module, _WSTimeout
+
     def test_heartbeat_ws_sends_and_stops(self):
         """send_heartbeat_ws가 WebSocket으로 heartbeat를 전송하고 stop_event로 종료"""
         import threading
@@ -554,11 +563,11 @@ class TestSendHeartbeatWs:
 
         sent       = []
         stop_event = threading.Event()
+        mock_ws_module, WSTimeout = self._make_ws_module()
 
         mock_ws = MagicMock()
         mock_ws.send.side_effect = lambda data: (sent.append(data) or stop_event.set())
-
-        mock_ws_module = MagicMock()
+        mock_ws.recv.side_effect = WSTimeout  # recv()는 항상 타임아웃
         mock_ws_module.WebSocket.return_value = mock_ws
 
         with patch("redis_client._ws", mock_ws_module):
@@ -584,6 +593,7 @@ class TestSendHeartbeatWs:
 
         stop_event  = threading.Event()
         call_count  = [0]
+        mock_ws_module, _ = self._make_ws_module()
 
         def fake_ws_constructor():
             ws = MagicMock()
@@ -593,7 +603,6 @@ class TestSendHeartbeatWs:
             ws.connect.side_effect = ConnectionError("WS down")
             return ws
 
-        mock_ws_module = MagicMock()
         mock_ws_module.WebSocket.side_effect = fake_ws_constructor
 
         with patch("redis_client._ws", mock_ws_module):
