@@ -9,9 +9,11 @@ import os
 import socket
 import threading
 import time
+from contextlib import suppress
 from datetime import datetime, timezone, timedelta
 
 import redis
+import websocket as _ws
 
 import config
 from collector import collect_all
@@ -200,30 +202,46 @@ def publish_result(data: dict) -> None:
         r.close()
 
 
-def send_heartbeat(hostname: str, ip_address: str, stop_event: threading.Event) -> None:
+def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Event) -> None:
     """
-    주기적으로 heartbeat를 Redis Hash에 저장하는 루프.
-    서버가 이 데이터를 읽어 온라인 PC 목록을 파악한다.
+    주기적으로 heartbeat를 서버 WebSocket으로 전송하는 루프.
+    서버가 접속/해제 시점을 즉시 감지해 온라인 PC 목록을 관리한다.
     """
+    sep = "&" if "?" in config.SERVER_WS_URL else "?"
+    url = f"{config.SERVER_WS_URL}{sep}device_type=pc"
+    if config.SERVER_API_KEY:
+        url += f"&api_key={config.SERVER_API_KEY}"
+
+    retry_count = 0
+
     while not stop_event.is_set():
+        ws = None
         try:
-            r = get_redis()
-            try:
-                beat_data = json.dumps({
+            ws = _ws.WebSocket()
+            ws.connect(url, timeout=10)
+            logger.info(f"Heartbeat WS 연결: {config.SERVER_WS_URL}")
+            retry_count = 0
+
+            while not stop_event.is_set():
+                beat = json.dumps({
+                    "type":       "heartbeat",
                     "hostname":   hostname,
                     "ip_address": ip_address,
                     "version":    config.CLIENT_VERSION,
-                    "beat_at":    datetime.now(timezone.utc).isoformat(),
                 }, ensure_ascii=False)
-                r.hset(config.HEARTBEAT_KEY, hostname, beat_data)
-                logger.debug(f"Heartbeat 전송: {hostname}")
-                # Redis 연결 성공 시 캐싱된 실패 보고서도 재전송
-                _retry_failed_reports(r)
-            finally:
-                r.close()
+                ws.send(beat)
+                logger.debug(f"Heartbeat WS 전송: {hostname}")
+                stop_event.wait(config.HEARTBEAT_INTERVAL)
+
         except Exception as e:
-            logger.warning(f"Heartbeat 전송 실패: {e}")
-        stop_event.wait(config.HEARTBEAT_INTERVAL)
+            delay = _RETRY_DELAYS[min(retry_count, len(_RETRY_DELAYS) - 1)]
+            logger.warning(f"Heartbeat WS 오류: {e} - {delay}초 후 재시도 (#{retry_count + 1})")
+            retry_count += 1
+            stop_event.wait(delay)
+        finally:
+            if ws:
+                with suppress(Exception):
+                    ws.close()
 
 
 def subscribe_and_run(stop_event) -> None:

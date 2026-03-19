@@ -24,8 +24,10 @@ a = Analysis(
         "pywintypes",
         "redis",
         "redis.asyncio",
+        "websocket",
     ] + collect_submodules("redis")
-      + collect_submodules("win32"),
+      + collect_submodules("win32")
+      + collect_submodules("websocket"),
     hookspath=[],
     runtime_hooks=[],
     excludes=[],

@@ -2,3 +2,4 @@ redis>=5.0.0
 pywin32>=306
 pyinstaller>=6.0.0
 truststore>=0.9.1
+websocket-client>=1.6.0

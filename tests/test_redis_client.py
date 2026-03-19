@@ -545,57 +545,60 @@ class TestSetSecretCommand:
         assert saved == []
 
 
-class TestSendHeartbeat:
+class TestSendHeartbeatWs:
 
-    def test_heartbeat_sends_hset_and_stops(self):
-        """send_heartbeat이 Redis Hash에 heartbeat를 전송하고 stop_event로 종료"""
+    def test_heartbeat_ws_sends_and_stops(self):
+        """send_heartbeat_ws가 WebSocket으로 heartbeat를 전송하고 stop_event로 종료"""
         import threading
         import redis_client
 
-        calls      = []
+        sent       = []
         stop_event = threading.Event()
 
-        mock_redis = MagicMock()
-        mock_redis.hset.side_effect = lambda key, host, data: (
-            calls.append((key, host, data)) or stop_event.set()
-        )
-        mock_redis.close = MagicMock()
+        mock_ws = MagicMock()
+        mock_ws.send.side_effect = lambda data: (sent.append(data) or stop_event.set())
 
-        with patch("redis_client.get_redis", return_value=mock_redis):
+        mock_ws_module = MagicMock()
+        mock_ws_module.WebSocket.return_value = mock_ws
+
+        with patch("redis_client._ws", mock_ws_module):
             t = threading.Thread(
-                target=redis_client.send_heartbeat,
+                target=redis_client.send_heartbeat_ws,
                 args=("PC-TEST", "192.168.0.1", stop_event),
                 daemon=True,
             )
             t.start()
             t.join(timeout=3)
 
-        assert len(calls) >= 1
-        assert calls[0][0] == config.HEARTBEAT_KEY
-        assert calls[0][1] == "PC-TEST"
+        assert len(sent) >= 1
+        beat = json.loads(sent[0])
+        assert beat["type"]        == "heartbeat"
+        assert beat["hostname"]    == "PC-TEST"
+        assert beat["ip_address"]  == "192.168.0.1"
+        assert beat["version"]     == config.CLIENT_VERSION
 
-        beat_data = json.loads(calls[0][2])
-        assert beat_data["hostname"]   == "PC-TEST"
-        assert beat_data["ip_address"] == "192.168.0.1"
-        assert "beat_at" in beat_data
-
-    def test_heartbeat_redis_failure_does_not_crash(self):
-        """Redis 연결 실패 시 예외 없이 계속 실행"""
+    def test_heartbeat_ws_failure_does_not_crash(self):
+        """WebSocket 연결 실패 시 예외 없이 재시도"""
         import threading
         import redis_client
 
         stop_event  = threading.Event()
         call_count  = [0]
 
-        def fake_get_redis():
+        def fake_ws_constructor():
+            ws = MagicMock()
             call_count[0] += 1
             if call_count[0] >= 2:
                 stop_event.set()
-            raise ConnectionError("Redis down")
+            ws.connect.side_effect = ConnectionError("WS down")
+            return ws
 
-        with patch("redis_client.get_redis", side_effect=fake_get_redis):
+        mock_ws_module = MagicMock()
+        mock_ws_module.WebSocket.side_effect = fake_ws_constructor
+
+        with patch("redis_client._ws", mock_ws_module):
             t = threading.Thread(
-                target=redis_client.send_heartbeat,
+                target=redis_client.send_heartbeat_ws,
                 args=("PC-TEST", "192.168.0.1", stop_event),
                 daemon=True,
             )
