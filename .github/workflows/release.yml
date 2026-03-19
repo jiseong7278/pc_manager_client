@@ -74,6 +74,16 @@ jobs:
           Write-Host "Redis password injected"
         shell: powershell
 
+      # ── 6-2. Server API Key 주입 ──────────────────────────────────
+      - name: Inject Server API key into config.py
+        run: |
+          $key = "${{ secrets.SERVER_API_KEY }}"
+          (Get-Content config.py -Encoding UTF8) |
+            ForEach-Object { $_ -replace '^SERVER_API_KEY\s*=\s*".*"', "SERVER_API_KEY = `"$key`"" } |
+            Set-Content config.py -Encoding UTF8
+          Write-Host "Server API key injected"
+        shell: powershell
+
       # ── 7. 테스트 실행 ───────────────────────────────────────────
       - name: Run tests
         run: |
