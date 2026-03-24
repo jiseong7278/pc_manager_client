@@ -6,6 +6,7 @@ import logging
 import platform
 import subprocess
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 
 KST = timezone(timedelta(hours=9))
@@ -137,16 +138,27 @@ def _get_registry_version(key_path: str, value_name: str) -> str | None:
 
 # ── PC 스펙 수집 ──────────────────────────────────────────────────
 def get_hardware_info() -> dict:
-    """CPU, RAM, 디스크, OS, MAC, 컴퓨터 이름 수집"""
-    return {
-        "mac_address":   _get_mac_address(),
-        "computer_name": platform.node(),
-        "os":            _get_os_info(),
-        "cpu":           _get_cpu_info(),
-        "gpu":           _get_gpu_info(),
-        "ram":           _get_ram_info(),
-        "disks":         _get_disk_info(),
+    """CPU, RAM, 디스크, OS, MAC, 컴퓨터 이름 수집 (병렬 실행)"""
+    tasks = {
+        "mac_address": _get_mac_address,
+        "os":          _get_os_info,
+        "cpu":         _get_cpu_info,
+        "gpu":         _get_gpu_info,
+        "ram":         _get_ram_info,
+        "disks":       _get_disk_info,
     }
+    results = {}
+    with ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+        futures = {ex.submit(fn): key for key, fn in tasks.items()}
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+            except Exception as e:
+                logger.warning(f"hardware.{key} 수집 실패: {e}")
+                results[key] = {"error": str(e)}
+    results["computer_name"] = platform.node()
+    return results
 
 
 def _get_mac_address() -> str:
@@ -287,8 +299,12 @@ def collect_all() -> dict:
     import config
     logger.info("PC 데이터 수집 시작")
 
-    antivirus = get_antivirus_info()
-    hardware  = get_hardware_info()
+    # 백신/하드웨어 수집을 병렬로 실행
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_av = ex.submit(get_antivirus_info)
+        fut_hw = ex.submit(get_hardware_info)
+    antivirus = fut_av.result()
+    hardware  = fut_hw.result()
 
     # 각 섹션의 오류 집계
     errors = []
