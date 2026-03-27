@@ -316,7 +316,7 @@ def collect_all() -> dict:
             errors.append({"section": f"hardware.{section}", "message": err})
 
     data = {
-        "collected_at":   datetime.now().isoformat(),
+        "collected_at":   datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
         "client_version": config.CLIENT_VERSION,
         "antivirus":      antivirus,
         "hardware":       hardware,

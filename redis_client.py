@@ -38,7 +38,7 @@ def _save_token_to_registry(token: str) -> None:
     """GitHub Token과 업데이트 시각을 레지스트리 HKLM\\SOFTWARE\\PCInspector에 저장"""
     try:
         import winreg
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
         with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
             winreg.SetValueEx(key, "GitHubToken",          0, winreg.REG_SZ, token)
             winreg.SetValueEx(key, "GitHubTokenUpdatedAt", 0, winreg.REG_SZ, now)
@@ -91,7 +91,7 @@ def _save_secret_to_registry(secret: str) -> None:
     """HMAC 시크릿을 레지스트리에 저장"""
     try:
         import winreg
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
         with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
             winreg.SetValueEx(key, "HMACSecret",          0, winreg.REG_SZ, secret)
             winreg.SetValueEx(key, "HMACSecretUpdatedAt", 0, winreg.REG_SZ, now)
