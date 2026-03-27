@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 _collect_lock = threading.Lock()
 
+# subscribe_and_run 이 heartbeat_request 명령을 수신하면 set.
+# send_heartbeat_ws 가 감지해 즉시 heartbeat를 전송한다.
+_heartbeat_now_event = threading.Event()
+
 _REGISTRY_KEY       = r"SOFTWARE\PCInspector"
 
 # Redis 재연결 백오프 시퀀스 (초): 5 → 10 → 30 → 60 → 120 후 유지
@@ -230,7 +234,8 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
             next_beat = time.monotonic()
             while not stop_event.is_set():
                 now = time.monotonic()
-                if now >= next_beat:
+                if now >= next_beat or _heartbeat_now_event.is_set():
+                    _heartbeat_now_event.clear()
                     beat = json.dumps({
                         "type":       "heartbeat",
                         "hostname":   hostname,
@@ -363,6 +368,10 @@ def subscribe_and_run(stop_event) -> None:
                         _save_secret_to_registry(secret)
                     else:
                         logger.warning("set_secret 명령에 secret 값 없음, 무시")
+
+                elif command == "heartbeat_request":
+                    logger.info("즉시 heartbeat 요청 수신")
+                    _heartbeat_now_event.set()
 
                 else:
                     logger.warning(f"알 수 없는 명령: {command!r}")
