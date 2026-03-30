@@ -154,18 +154,32 @@ def _retry_failed_reports(r: redis.Redis) -> None:
     if not failed:
         return
     logger.info(f"캐싱된 실패 보고서 재전송 시도: {len(failed)}건")
-    try:
-        for data in failed:
+    sent = 0
+    remaining = list(failed)
+    for data in failed:
+        try:
             payload_str = json.dumps(data, ensure_ascii=False)
             sig = _sign_payload(payload_str)
             fields: dict = {"data": payload_str}
             if sig:
                 fields["sig"] = sig
             r.xadd(config.STREAM_KEY, fields, maxlen=5000, approximate=True)
+            remaining.pop(0)
+            sent += 1
+        except Exception as e:
+            logger.error(f"실패 보고서 재전송 중 오류 (전송 {sent}건 후): {e}")
+            break
+    if sent == len(failed):
         _clear_failed_reports()
-        logger.info(f"실패 보고서 {len(failed)}건 재전송 완료")
-    except Exception as e:
-        logger.error(f"실패 보고서 재전송 중 오류: {e}")
+        logger.info(f"실패 보고서 {sent}건 재전송 완료")
+    elif sent > 0:
+        # 일부만 성공 — 미전송 항목만 파일에 다시 저장
+        try:
+            with open(_FAILED_REPORTS_FILE, "w", encoding="utf-8") as f:
+                json.dump(remaining, f, ensure_ascii=False)
+            logger.info(f"실패 보고서 {sent}건 전송, {len(remaining)}건 재저장")
+        except Exception as e:
+            logger.error(f"실패 보고서 재저장 오류: {e}")
 
 
 # ── Redis 연결 ─────────────────────────────────────────────────────────
@@ -299,11 +313,11 @@ def subscribe_and_run(stop_event) -> None:
                     continue
 
                 # HMAC 서명 검증 (시크릿이 등록된 경우)
-                # set_secret / set_token 은 시크릿 부트스트랩 명령이므로 검증 제외
+                # set_secret / set_token / set_api_key 는 설정 부트스트랩 명령이므로 검증 제외
                 # sig 필드를 제외한 나머지를 sort_keys 직렬화로 검증
                 _cmd_raw    = payload.get("command")
                 hmac_secret = _get_hmac_secret()
-                if hmac_secret and _cmd_raw not in ("set_secret", "set_token"):
+                if hmac_secret and _cmd_raw not in ("set_secret", "set_token", "set_api_key"):
                     sig = payload.get("sig", "")
                     msg_without_sig = {k: v for k, v in payload.items() if k != "sig"}
                     msg_canonical   = json.dumps(msg_without_sig, sort_keys=True, separators=(',', ':'))
