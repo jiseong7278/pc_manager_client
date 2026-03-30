@@ -334,10 +334,13 @@ def subscribe_and_run(stop_event) -> None:
                         logger.warning("수집이 이미 진행 중입니다. 명령 무시")
                         continue
                     try:
+                        session_id = payload.get("session_id", "")
                         data = collect_all()
                         data["hostname"]   = hostname
                         data["ip_address"] = _get_ip_address()
                         data.update(_get_token_info())
+                        if session_id:
+                            data["session_id"] = session_id
                         publish_result(data)
                     except Exception as e:
                         logger.error(f"데이터 수집/전송 실패: {e}")
