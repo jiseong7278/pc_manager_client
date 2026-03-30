@@ -103,20 +103,24 @@ def _get_defender_version() -> dict:
         $status = Get-MpComputerStatus 2>$null
         if ($status) {
             [PSCustomObject]@{
-                product_version   = $status.AMProductVersion
-                engine_version    = $status.AMEngineVersion
-                signature_version = $status.AntivirusSignatureVersion
-                real_time         = $status.RealTimeProtectionEnabled
+                product_version        = $status.AMProductVersion
+                engine_version         = $status.AMEngineVersion
+                signature_version      = $status.AntivirusSignatureVersion
+                real_time              = $status.RealTimeProtectionEnabled
+                signatures_out_of_date = $status.DefenderSignaturesOutOfDate
             } | ConvertTo-Json -Compress
         }
         """
         result = _run_powershell(ps_script)
         data = _parse_json(result, {})
+        out_of_date = data.get("signatures_out_of_date")
+        is_up_to_date = (not out_of_date) if out_of_date is not None else None
         return {
             "version":           data.get("product_version"),
             "engine_version":    data.get("engine_version"),
             "signature_version": data.get("signature_version"),
             "real_time":         data.get("real_time", False),
+            "is_up_to_date":     is_up_to_date,
         }
     except Exception as e:
         logger.warning(f"Defender 버전 수집 실패: {e}")
