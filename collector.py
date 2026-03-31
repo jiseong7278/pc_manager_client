@@ -375,8 +375,7 @@ def trigger_av_update() -> dict:
                 import os
                 if os.path.exists(path):
                     try:
-                        import subprocess
-                        subprocess.Popen([path], creationflags=subprocess.CREATE_NO_WINDOW)
+                        os.startfile(path)
                         logger.info("ALYac 업데이트 실행: %s", path)
                         updated.append(av_name)
                         ran = True
