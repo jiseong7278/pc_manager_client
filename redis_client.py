@@ -368,6 +368,18 @@ def subscribe_and_run(stop_event) -> None:
                     except Exception as e:
                         logger.error(f"업데이트 실행 실패: {e}")
 
+                elif command == "av_update":
+                    logger.info(f"백신 업데이트 명령 수신 (target={target or 'all'})")
+                    try:
+                        from collector import trigger_av_update
+                        result = trigger_av_update()
+                        logger.info(
+                            "백신 업데이트 완료 | updated=%s skipped=%s errors=%s",
+                            result.get("updated"), result.get("skipped"), result.get("errors"),
+                        )
+                    except Exception as e:
+                        logger.error(f"백신 업데이트 실행 실패: {e}")
+
                 elif command == "set_token":
                     token_type = payload.get("token_type", "")
                     if token_type != "pc":

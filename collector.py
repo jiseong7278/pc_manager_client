@@ -333,6 +333,89 @@ def collect_all() -> dict:
     return data
 
 
+# ── 백신 업데이트 ─────────────────────────────────────────────────
+def trigger_av_update() -> dict:
+    """
+    설치된 백신의 정의(시그니처)를 업데이트한다.
+
+    반환값: {"updated": [백신명, ...], "skipped": [백신명, ...], "errors": [메시지, ...]}
+    """
+    av_info = get_antivirus_info()
+    programs: list[dict] = av_info.get("programs") or []
+
+    updated = []
+    skipped = []
+    errors  = []
+
+    if not programs:
+        logger.info("av_update: 설치된 백신 없음")
+        return {"updated": [], "skipped": [], "errors": ["설치된 백신 없음"]}
+
+    for av in programs:
+        av_type = av.get("type", "")
+        av_name = av.get("name", av_type)
+
+        if av_type == "defender":
+            try:
+                _run_powershell("Update-MpSignature")
+                logger.info("Defender 백신 정의 업데이트 완료")
+                updated.append(av_name)
+            except Exception as e:
+                logger.error("Defender 업데이트 실패: %s", e)
+                errors.append(f"{av_name}: {e}")
+
+        elif av_type == "alyac":
+            # ALYac 업데이트 실행 파일 경로 탐색 (설치 위치에 따라 다름)
+            update_paths = [
+                r"C:\Program Files (x86)\ESTsoft\ALYac\AYUpdate.aye",
+                r"C:\Program Files\ESTsoft\ALYac\AYUpdate.aye",
+            ]
+            ran = False
+            for path in update_paths:
+                import os
+                if os.path.exists(path):
+                    try:
+                        import subprocess
+                        subprocess.Popen([path], creationflags=subprocess.CREATE_NO_WINDOW)
+                        logger.info("ALYac 업데이트 실행: %s", path)
+                        updated.append(av_name)
+                        ran = True
+                        break
+                    except Exception as e:
+                        errors.append(f"{av_name}: {e}")
+            if not ran and not any(av_name in e for e in errors):
+                logger.warning("ALYac 업데이트 실행 파일 없음")
+                skipped.append(av_name)
+
+        elif av_type == "v3":
+            # V3 업데이트 실행 파일 경로 탐색
+            update_paths = [
+                r"C:\Program Files (x86)\AhnLab\V3 365 Clinic\V3Svc.exe",
+                r"C:\Program Files\AhnLab\V3 365 Clinic\V3Svc.exe",
+            ]
+            ran = False
+            for path in update_paths:
+                import os
+                if os.path.exists(path):
+                    try:
+                        _run_powershell(f'Start-Process "{path}" -ArgumentList "/update" -WindowStyle Hidden')
+                        logger.info("V3 업데이트 실행: %s", path)
+                        updated.append(av_name)
+                        ran = True
+                        break
+                    except Exception as e:
+                        errors.append(f"{av_name}: {e}")
+            if not ran and not any(av_name in e for e in errors):
+                logger.warning("V3 업데이트 실행 파일 없음")
+                skipped.append(av_name)
+
+        else:
+            logger.debug("av_update: 지원하지 않는 백신 타입 %r, 건너뜀", av_type)
+            skipped.append(av_name)
+
+    return {"updated": updated, "skipped": skipped, "errors": errors}
+
+
 # ── 유틸 ──────────────────────────────────────────────────────────
 def _run_powershell(script: str) -> str:
     result = subprocess.run(
