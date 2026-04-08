@@ -256,11 +256,18 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
     서버의 WebSocket PING 프레임에 PONG을 자동 응답한다.
     (uvicorn/websockets는 기본 20초마다 PING 전송 — 무응답 시 연결 종료)
     """
+    import ssl
+    import truststore
+
     sep = "&" if "?" in config.SERVER_WS_URL else "?"
     url = f"{config.SERVER_WS_URL}{sep}device_type=pc"
     headers = {}
     if config.SERVER_API_KEY:
         headers["Authorization"] = f"Bearer {config.SERVER_API_KEY}"
+
+    ssl_ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ssl_ctx.check_hostname = True
+    ssl_ctx.verify_mode    = ssl.CERT_REQUIRED
 
     retry_count = 0
 
@@ -268,7 +275,7 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
         ws = None
         try:
             ws = _ws.WebSocket()
-            ws.connect(url, timeout=10, header=headers)
+            ws.connect(url, timeout=10, header=headers, sslopt={"context": ssl_ctx})
             ws.settimeout(1)  # recv() 1초 대기 후 타임아웃 → PING 응답 루프용
             logger.info(f"Heartbeat WS 연결: {config.SERVER_WS_URL}")
             retry_count = 0

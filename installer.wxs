@@ -45,6 +45,13 @@
               KeyPath="yes" />
       </Component>
 
+      <!-- CA 인증서 -->
+      <Component Id="CACert" Guid="E4F5A6B7-C8D9-0123-EF01-345678901234">
+        <File Id="CACertFile"
+              Source="ca.crt"
+              KeyPath="yes" />
+      </Component>
+
     </ComponentGroup>
 
     <Feature Id="MainFeature" Title="PC Inspect Client" Level="1">
@@ -95,16 +102,32 @@
                   Impersonate="no"
                   Return="ignore" />
 
+    <CustomAction Id="InstallCACert"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="certutil -addstore -f Root &quot;[INSTALLFOLDER]ca.crt&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <CustomAction Id="RemoveCACert"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="certutil -delstore Root &quot;PCInspector Root CA&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
-      <!-- 설치 시: 서비스 등록 → 시작 -->
-      <Custom Action="InstallService" After="InstallFiles"    Condition="NOT Installed" />
+      <!-- 설치 시: CA 인증서 신뢰 등록 → 서비스 등록 → 시작 -->
+      <Custom Action="InstallCACert"  After="InstallFiles"    Condition="NOT Installed" />
+      <Custom Action="InstallService" After="InstallCACert"   Condition="NOT Installed" />
       <Custom Action="SetAutoStart"   After="InstallService"  Condition="NOT Installed" />
       <Custom Action="StartService"   After="SetAutoStart"    Condition="NOT Installed" />
 
-      <!-- 제거 시: 서비스 중지 → 제거 → 프로세스 종료 -->
+      <!-- 제거 시: 서비스 중지 → 제거 → 프로세스 종료 → CA 인증서 제거 -->
       <Custom Action="StopService"    Before="RemoveFiles"    Condition="REMOVE~=&quot;ALL&quot;" />
       <Custom Action="RemoveService"  After="StopService"     Condition="REMOVE~=&quot;ALL&quot;" />
       <Custom Action="KillProcess"    After="RemoveService"   Condition="REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="RemoveCACert"   After="KillProcess"     Condition="REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
 
   </Package>
