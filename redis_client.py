@@ -38,16 +38,42 @@ _FAILED_REPORTS_FILE = os.path.join(
 KST = timezone(timedelta(hours=9))
 
 
+# DPAPI 플래그: CRYPTPROTECT_LOCAL_MACHINE — 동일 PC의 어느 계정에서나 복호화 가능
+_DPAPI_FLAG_LOCAL_MACHINE = 4
+
+
+def _dpapi_encrypt(value: str) -> bytes:
+    """Windows DPAPI로 문자열을 암호화해 bytes로 반환"""
+    import win32crypt
+    return win32crypt.CryptProtectData(
+        value.encode("utf-8"), None, None, None, None, _DPAPI_FLAG_LOCAL_MACHINE
+    )
+
+
+def _dpapi_decrypt(data) -> str:
+    """Windows DPAPI로 bytes를 복호화해 문자열로 반환.
+    레거시 평문 str 값(이전 버전 설치분)은 그대로 반환한다."""
+    if isinstance(data, str):
+        return data  # 레거시 평문값 — 다음 저장 시 자동으로 암호화됨
+    try:
+        import win32crypt
+        _, decrypted = win32crypt.CryptUnprotectData(data, None, None, None, 0)
+        return decrypted.decode("utf-8")
+    except Exception as e:
+        logger.warning(f"DPAPI 복호화 실패: {e}")
+        return ""
+
+
 def _save_token_to_registry(token: str) -> None:
-    """GitHub Token과 업데이트 시각을 레지스트리 HKLM\\SOFTWARE\\PCInspector에 저장"""
+    """GitHub Token과 업데이트 시각을 레지스트리 HKLM\\SOFTWARE\\PCInspector에 저장 (DPAPI 암호화)"""
     try:
         import winreg
         now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
         with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
-            winreg.SetValueEx(key, "GitHubToken",          0, winreg.REG_SZ, token)
-            winreg.SetValueEx(key, "GitHubTokenUpdatedAt", 0, winreg.REG_SZ, now)
+            winreg.SetValueEx(key, "GitHubToken",          0, winreg.REG_BINARY, _dpapi_encrypt(token))
+            winreg.SetValueEx(key, "GitHubTokenUpdatedAt", 0, winreg.REG_SZ,     now)
         config.GITHUB_TOKEN = token
-        logger.info("GitHub Token 레지스트리 저장 완료")
+        logger.info("GitHub Token 레지스트리 저장 완료 (DPAPI 암호화)")
     except Exception as e:
         logger.error(f"GitHub Token 레지스트리 저장 실패: {e}")
 
@@ -81,7 +107,8 @@ def _get_hmac_secret() -> str:
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
-            secret, _ = winreg.QueryValueEx(key, "HMACSecret")
+            raw, _ = winreg.QueryValueEx(key, "HMACSecret")
+            secret  = _dpapi_decrypt(raw)
             if secret:
                 return secret
     except FileNotFoundError:
@@ -92,14 +119,14 @@ def _get_hmac_secret() -> str:
 
 
 def _save_secret_to_registry(secret: str) -> None:
-    """HMAC 시크릿을 레지스트리에 저장"""
+    """HMAC 시크릿을 레지스트리에 저장 (DPAPI 암호화)"""
     try:
         import winreg
         now = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
         with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
-            winreg.SetValueEx(key, "HMACSecret",          0, winreg.REG_SZ, secret)
-            winreg.SetValueEx(key, "HMACSecretUpdatedAt", 0, winreg.REG_SZ, now)
-        logger.info("HMAC 시크릿 레지스트리 저장 완료")
+            winreg.SetValueEx(key, "HMACSecret",          0, winreg.REG_BINARY, _dpapi_encrypt(secret))
+            winreg.SetValueEx(key, "HMACSecretUpdatedAt", 0, winreg.REG_SZ,     now)
+        logger.info("HMAC 시크릿 레지스트리 저장 완료 (DPAPI 암호화)")
     except Exception as e:
         logger.error(f"HMAC 시크릿 레지스트리 저장 실패: {e}")
 
@@ -231,8 +258,9 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
     """
     sep = "&" if "?" in config.SERVER_WS_URL else "?"
     url = f"{config.SERVER_WS_URL}{sep}device_type=pc"
+    headers = {}
     if config.SERVER_API_KEY:
-        url += f"&api_key={config.SERVER_API_KEY}"
+        headers["Authorization"] = f"Bearer {config.SERVER_API_KEY}"
 
     retry_count = 0
 
@@ -240,7 +268,7 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
         ws = None
         try:
             ws = _ws.WebSocket()
-            ws.connect(url, timeout=10)
+            ws.connect(url, timeout=10, header=headers)
             ws.settimeout(1)  # recv() 1초 대기 후 타임아웃 → PING 응답 루프용
             logger.info(f"Heartbeat WS 연결: {config.SERVER_WS_URL}")
             retry_count = 0

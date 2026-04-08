@@ -5,7 +5,7 @@
 CLIENT_VERSION = "1.0.0"
 
 # ── Redis 서버 설정 ───────────────────────────────────────────────
-REDIS_HOST        = "192.168.10.18"   # 서버 호스트명 또는 IP
+REDIS_HOST        = "192.168.10.18"   # 빌드 시 secrets.SERVER_HOST 자동 주입
 REDIS_PORT        = 6379
 REDIS_PASSWORD    = ""  # 빌드 시 secrets.REDIS_PASSWORD 자동 주입
 REDIS_TLS_ENABLED = False        # Redis TLS 활성화 여부
@@ -25,7 +25,7 @@ HMAC_SECRET = ""
 
 # ── Heartbeat 설정 ────────────────────────────────────────────────
 HEARTBEAT_INTERVAL = 30                          # heartbeat 전송 주기 (초)
-SERVER_WS_URL      = "ws://192.168.10.18:8000/ws/client"  # heartbeat WebSocket URL
+SERVER_WS_URL      = f"ws://{REDIS_HOST}:8000/ws/client"  # REDIS_HOST 기반 자동 구성
 SERVER_API_KEY     = ""                          # 빌드 시 secrets.API_KEY 자동 주입
 
 # ── 서비스 설정 ───────────────────────────────────────────────────

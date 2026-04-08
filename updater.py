@@ -22,12 +22,27 @@ _update_lock  = threading.Lock()
 _REGISTRY_KEY = r"SOFTWARE\PCInspector"
 
 
+def _dpapi_decrypt(data) -> str:
+    """Windows DPAPI로 bytes를 복호화해 문자열로 반환.
+    레거시 평문 str 값(이전 버전 설치분)은 그대로 반환한다."""
+    if isinstance(data, str):
+        return data
+    try:
+        import win32crypt
+        _, decrypted = win32crypt.CryptUnprotectData(data, None, None, None, 0)
+        return decrypted.decode("utf-8")
+    except Exception as e:
+        logger.warning(f"DPAPI 복호화 실패: {e}")
+        return ""
+
+
 def _load_token_from_registry() -> None:
-    """레지스트리에 저장된 GitHub Token을 읽어 config.GITHUB_TOKEN에 반영"""
+    """레지스트리에 저장된 GitHub Token을 읽어 config.GITHUB_TOKEN에 반영 (DPAPI 복호화)"""
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _REGISTRY_KEY) as key:
-            token, _ = winreg.QueryValueEx(key, "GitHubToken")
+            raw, _ = winreg.QueryValueEx(key, "GitHubToken")
+            token   = _dpapi_decrypt(raw)
             if token:
                 config.GITHUB_TOKEN = token
                 logger.debug("레지스트리에서 GitHub Token 로드 완료")

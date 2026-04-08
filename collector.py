@@ -365,15 +365,23 @@ def trigger_av_update() -> dict:
                 errors.append(f"{av_name}: {e}")
 
         elif av_type == "alyac":
-            # ALYac 업데이트 실행 파일 경로 탐색 (설치 위치에 따라 다름)
-            update_paths = [
+            import os
+            # 레지스트리에서 설치 경로 탐색 후 기본 경로를 폴백으로 추가
+            update_paths = []
+            reg_dir = _find_av_install_dir(["ALYac", "알약"])
+            if reg_dir:
+                update_paths.append(os.path.join(reg_dir, "AYUpdate.aye"))
+            update_paths += [
                 r"C:\Program Files (x86)\ESTsoft\ALYac\AYUpdate.aye",
                 r"C:\Program Files\ESTsoft\ALYac\AYUpdate.aye",
             ]
             ran = False
             for path in update_paths:
-                import os
                 if os.path.exists(path):
+                    if not _is_allowed_av_path(path):
+                        logger.error("ALYac 업데이트 거부: 허용 디렉터리 외 경로 %s", path)
+                        errors.append(f"{av_name}: 허용되지 않은 경로")
+                        break
                     try:
                         os.startfile(path)
                         logger.info("ALYac 업데이트 실행: %s", path)
@@ -387,17 +395,27 @@ def trigger_av_update() -> dict:
                 skipped.append(av_name)
 
         elif av_type == "v3":
-            # V3 업데이트 실행 파일 경로 탐색
-            update_paths = [
+            import os
+            # 레지스트리에서 설치 경로 탐색 후 기본 경로를 폴백으로 추가
+            update_paths = []
+            reg_dir = _find_av_install_dir(["V3 365 Clinic"])
+            if reg_dir:
+                update_paths.append(os.path.join(reg_dir, "V3Svc.exe"))
+            update_paths += [
                 r"C:\Program Files (x86)\AhnLab\V3 365 Clinic\V3Svc.exe",
                 r"C:\Program Files\AhnLab\V3 365 Clinic\V3Svc.exe",
             ]
             ran = False
             for path in update_paths:
-                import os
                 if os.path.exists(path):
+                    if not _is_allowed_av_path(path):
+                        logger.error("V3 업데이트 거부: 허용 디렉터리 외 경로 %s", path)
+                        errors.append(f"{av_name}: 허용되지 않은 경로")
+                        break
                     try:
-                        _run_powershell(f'Start-Process "{path}" -ArgumentList "/update" -WindowStyle Hidden')
+                        # 단일 인용 문자열 사용 — PowerShell 변수 치환/이스케이프 방지
+                        escaped = path.replace("'", "''")
+                        _run_powershell(f"Start-Process -LiteralPath '{escaped}' -ArgumentList '/update' -WindowStyle Hidden")
                         logger.info("V3 업데이트 실행: %s", path)
                         updated.append(av_name)
                         ran = True
@@ -416,6 +434,67 @@ def trigger_av_update() -> dict:
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────
+
+# 백신 실행 파일 허용 부모 디렉터리 — 이 범위 밖의 경로는 실행 거부
+_ALLOWED_AV_DIRS: frozenset[str] = frozenset({
+    r"C:\Program Files (x86)\ESTsoft",
+    r"C:\Program Files\ESTsoft",
+    r"C:\Program Files (x86)\AhnLab",
+    r"C:\Program Files\AhnLab",
+})
+
+
+def _is_allowed_av_path(path: str) -> bool:
+    """경로가 허용된 백신 설치 디렉터리 내에 있는지 검증"""
+    import os
+    norm = os.path.normcase(os.path.normpath(path))
+    return any(
+        norm.startswith(os.path.normcase(os.path.normpath(d)) + os.sep)
+        for d in _ALLOWED_AV_DIRS
+    )
+
+
+def _find_av_install_dir(display_name_keywords: list[str]) -> str | None:
+    """언인스톨 레지스트리에서 백신 설치 디렉터리 탐색.
+    설치된 앱 목록을 순회하며 DisplayName이 키워드를 포함하는 항목의
+    InstallLocation을 반환한다."""
+    import os
+    try:
+        import winreg
+    except ImportError:
+        return None
+
+    search_keys = [
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    ]
+    for key_path in search_keys:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as root:
+                i = 0
+                while True:
+                    try:
+                        sub_name = winreg.EnumKey(root, i)
+                        with winreg.OpenKey(root, sub_name) as sub:
+                            try:
+                                name, _ = winreg.QueryValueEx(sub, "DisplayName")
+                                if any(kw.lower() in name.lower() for kw in display_name_keywords):
+                                    try:
+                                        loc, _ = winreg.QueryValueEx(sub, "InstallLocation")
+                                        if loc and os.path.isdir(loc):
+                                            return loc
+                                    except FileNotFoundError:
+                                        pass
+                            except FileNotFoundError:
+                                pass
+                        i += 1
+                    except OSError:
+                        break
+        except Exception:
+            pass
+    return None
+
+
 def _run_powershell(script: str) -> str:
     result = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],

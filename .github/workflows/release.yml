@@ -54,6 +54,16 @@ jobs:
           Get-Content config.py | Select-String "CLIENT_VERSION"
         shell: powershell
 
+      # ── 5-1. 서버 호스트 주입 ───────────────────────────────────────
+      - name: Inject server host into config.py
+        run: |
+          $host = "${{ secrets.SERVER_HOST }}"
+          (Get-Content config.py -Encoding UTF8) |
+            ForEach-Object { $_ -replace '^REDIS_HOST\s*=\s*".*"', "REDIS_HOST = `"$host`"" } |
+            Set-Content config.py -Encoding UTF8
+          Write-Host "Server host injected"
+        shell: powershell
+
       # ── 6. GitHub Token 주입 ────────────────────────────────────────
       - name: Inject GitHub token into config.py
         run: |
