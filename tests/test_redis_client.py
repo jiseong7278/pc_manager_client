@@ -326,22 +326,26 @@ class TestCommandSignatureVerification:
 class TestSaveTokenToRegistry:
 
     def test_saves_token_and_updates_config(self):
-        """토큰을 레지스트리에 저장하고 config.GITHUB_TOKEN 업데이트"""
+        """토큰을 레지스트리에 DPAPI 암호화 후 저장하고 config.GITHUB_TOKEN 업데이트"""
         import winreg as _real_winreg
-        mock_winreg = MagicMock()
-        mock_key    = MagicMock()
+        mock_winreg     = MagicMock()
+        mock_win32crypt = MagicMock()
+        mock_key        = MagicMock()
+        fake_encrypted  = b"\xde\xad\xbe\xef"
         mock_winreg.CreateKey.return_value.__enter__ = MagicMock(return_value=mock_key)
         mock_winreg.CreateKey.return_value.__exit__  = MagicMock(return_value=False)
         mock_winreg.HKEY_LOCAL_MACHINE = _real_winreg.HKEY_LOCAL_MACHINE
+        mock_winreg.REG_BINARY         = _real_winreg.REG_BINARY
         mock_winreg.REG_SZ             = _real_winreg.REG_SZ
+        mock_win32crypt.CryptProtectData.return_value = fake_encrypted
 
-        with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        with patch.dict("sys.modules", {"winreg": mock_winreg, "win32crypt": mock_win32crypt}):
             import redis_client
             redis_client._save_token_to_registry("ghp_testtoken")
 
         mock_winreg.CreateKey.assert_called_once()
         mock_winreg.SetValueEx.assert_any_call(
-            mock_key, "GitHubToken", 0, _real_winreg.REG_SZ, "ghp_testtoken"
+            mock_key, "GitHubToken", 0, _real_winreg.REG_BINARY, fake_encrypted
         )
         assert mock_winreg.SetValueEx.call_count == 2  # token + timestamp
         assert redis_client.config.GITHUB_TOKEN == "ghp_testtoken"
@@ -404,21 +408,25 @@ class TestHmacSecret:
         assert secret == "fallback_secret"
 
     def test_save_secret_to_registry(self):
-        """HMAC 시크릿을 레지스트리에 저장"""
+        """HMAC 시크릿을 레지스트리에 DPAPI 암호화 후 저장"""
         import winreg as _real_winreg
-        mock_winreg = MagicMock()
-        mock_key    = MagicMock()
+        mock_winreg     = MagicMock()
+        mock_win32crypt = MagicMock()
+        mock_key        = MagicMock()
+        fake_encrypted  = b"\xca\xfe\xba\xbe"
         mock_winreg.CreateKey.return_value.__enter__ = MagicMock(return_value=mock_key)
         mock_winreg.CreateKey.return_value.__exit__  = MagicMock(return_value=False)
         mock_winreg.HKEY_LOCAL_MACHINE               = _real_winreg.HKEY_LOCAL_MACHINE
+        mock_winreg.REG_BINARY                       = _real_winreg.REG_BINARY
         mock_winreg.REG_SZ                           = _real_winreg.REG_SZ
+        mock_win32crypt.CryptProtectData.return_value = fake_encrypted
 
-        with patch.dict("sys.modules", {"winreg": mock_winreg}):
+        with patch.dict("sys.modules", {"winreg": mock_winreg, "win32crypt": mock_win32crypt}):
             import redis_client
             redis_client._save_secret_to_registry("newsecret")
 
         mock_winreg.SetValueEx.assert_any_call(
-            mock_key, "HMACSecret", 0, _real_winreg.REG_SZ, "newsecret"
+            mock_key, "HMACSecret", 0, _real_winreg.REG_BINARY, fake_encrypted
         )
         assert mock_winreg.SetValueEx.call_count == 2  # secret + timestamp
 
