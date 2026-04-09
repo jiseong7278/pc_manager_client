@@ -25,7 +25,7 @@ HMAC_SECRET = ""
 
 # ── Heartbeat 설정 ────────────────────────────────────────────────
 HEARTBEAT_INTERVAL = 30                          # heartbeat 전송 주기 (초)
-SERVER_WS_URL      = f"{'wss' if REDIS_TLS_ENABLED else 'ws'}://{REDIS_HOST}/ws/client"  # TLS 여부에 따라 wss/ws 자동 선택
+SERVER_WS_URL      = f"wss://{REDIS_HOST}/ws/client"  # REDIS_HOST 기반 자동 구성 (Nginx 443)
 SERVER_API_KEY     = ""                          # 빌드 시 secrets.API_KEY 자동 주입
 
 # ── 서비스 설정 ───────────────────────────────────────────────────

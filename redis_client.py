@@ -266,7 +266,7 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
         headers["Authorization"] = f"Bearer {config.SERVER_API_KEY}"
 
     ssl_ctx = None
-    if config.REDIS_TLS_ENABLED:
+    if config.SERVER_WS_URL.startswith("wss://"):
         ssl_ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ssl_ctx.check_hostname = True
         ssl_ctx.verify_mode    = ssl.CERT_REQUIRED
