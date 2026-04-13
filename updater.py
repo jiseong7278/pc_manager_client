@@ -99,8 +99,8 @@ def _verify_sha256(file_path: str, expected_digest: str) -> bool:
     expected_digest 형식: "sha256:<hexhash>" (GitHub API assets[].digest)
     """
     if not expected_digest.startswith("sha256:"):
-        logger.warning(f"지원하지 않는 digest 형식: {expected_digest!r} — 검증 건너뜀")
-        return True  # 알 수 없는 형식은 차단하지 않음
+        logger.error(f"지원하지 않는 digest 형식: {expected_digest!r} — 설치 차단")
+        return False
 
     expected_hash = expected_digest.split(":", 1)[1].lower()
     try:
