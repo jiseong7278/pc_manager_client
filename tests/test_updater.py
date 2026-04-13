@@ -106,12 +106,12 @@ class TestVerifySha256:
         assert result is False
 
     def test_unknown_digest_format_skips_verification(self, tmp_path):
-        """sha256: 이외 형식은 검증 건너뜀 (True 반환)"""
+        """sha256: 이외 형식은 검증 건너뜀 (False 반환)"""
         msi_file = tmp_path / "test.msi"
         msi_file.write_bytes(b"content")
 
         result = _verify_sha256(str(msi_file), "md5:abc123")
-        assert result is True
+        assert result is False
 
     def test_file_read_error_returns_false(self, tmp_path):
         result = _verify_sha256("/nonexistent/path/test.msi", "sha256:" + "a" * 64)
