@@ -24,7 +24,7 @@ UPDATE_CHECK_INTERVAL = 300    # 업데이트 확인 주기 (초, 기본 5분)
 HMAC_SECRET = ""
 
 # ── Heartbeat 설정 ────────────────────────────────────────────────
-HEARTBEAT_INTERVAL = 30                          # heartbeat 전송 주기 (초)
+HEARTBEAT_INTERVAL = 15                          # heartbeat 전송 주기 (초)
 SERVER_WS_URL      = f"wss://{REDIS_HOST}/ws/client"  # REDIS_HOST 기반 자동 구성 (Nginx 443)
 SERVER_API_KEY     = ""                          # 빌드 시 secrets.API_KEY 자동 주입
 
