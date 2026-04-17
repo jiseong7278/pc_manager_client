@@ -145,11 +145,18 @@ def _sign_payload(payload_str: str) -> str:
 
 # ── 실패 보고서 로컬 캐싱 ──────────────────────────────────────────────
 
+_FAILED_REPORTS_MAX = 100  # 실패 보고서 최대 보관 건수
+
+
 def _save_failed_report(data: dict) -> None:
-    """전송 실패한 보고서를 로컬 파일에 저장"""
+    """전송 실패한 보고서를 로컬 파일에 저장. 최대 100건 초과 시 오래된 것부터 제거."""
     try:
         existing = _load_failed_reports()
         existing.append(data)
+        if len(existing) > _FAILED_REPORTS_MAX:
+            dropped = len(existing) - _FAILED_REPORTS_MAX
+            existing = existing[-_FAILED_REPORTS_MAX:]
+            logger.warning(f"실패 보고서 한도 초과 — 오래된 {dropped}건 삭제, 최대 {_FAILED_REPORTS_MAX}건 유지")
         with open(_FAILED_REPORTS_FILE, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False)
         logger.info(f"실패 보고서 로컬 저장: 누적 {len(existing)}건")

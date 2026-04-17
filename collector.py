@@ -6,7 +6,7 @@ import logging
 import platform
 import subprocess
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime, timezone, timedelta
 
 KST = timezone(timedelta(hours=9))
@@ -294,6 +294,10 @@ def _get_disk_info() -> list:
         return []
 
 
+# 전체 수집 최대 대기 시간 (초). PowerShell 개별 timeout=30 * 여러 단계 고려
+_COLLECT_TIMEOUT = 90
+
+
 # ── 전체 데이터 통합 ──────────────────────────────────────────────
 def collect_all() -> dict:
     """
@@ -304,20 +308,38 @@ def collect_all() -> dict:
     logger.info("PC 데이터 수집 시작")
 
     # 백신/하드웨어 수집을 병렬로 실행
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    # with 컨텍스트 매니저는 __exit__에서 무한 대기하므로 직접 제어
+    ex = ThreadPoolExecutor(max_workers=2)
+    try:
         fut_av = ex.submit(get_antivirus_info)
         fut_hw = ex.submit(get_hardware_info)
-    antivirus = fut_av.result()
-    hardware  = fut_hw.result()
+
+        try:
+            antivirus = fut_av.result(timeout=_COLLECT_TIMEOUT)
+        except FuturesTimeoutError:
+            logger.error("백신 정보 수집 타임아웃 (%ds 초과)", _COLLECT_TIMEOUT)
+            antivirus = {"status": "error", "programs": [], "message": f"수집 타임아웃 ({_COLLECT_TIMEOUT}s)"}
+
+        try:
+            hardware = fut_hw.result(timeout=_COLLECT_TIMEOUT)
+        except FuturesTimeoutError:
+            logger.error("하드웨어 정보 수집 타임아웃 (%ds 초과)", _COLLECT_TIMEOUT)
+            hardware = {"computer_name": platform.node(), "error": f"수집 타임아웃 ({_COLLECT_TIMEOUT}s)"}
+    finally:
+        ex.shutdown(wait=False)  # 타임아웃된 스레드는 백그라운드에서 자연 종료 대기
 
     # 각 섹션의 오류 집계
     errors = []
     if antivirus.get("status") == "error":
         errors.append({"section": "antivirus", "message": antivirus.get("message", "")})
-    for section in ("os", "cpu", "ram"):
-        err = hardware.get(section, {}).get("error")
-        if err:
-            errors.append({"section": f"hardware.{section}", "message": err})
+    # 하드웨어 전체 타임아웃 (최상위 error 키)
+    if hardware.get("error"):
+        errors.append({"section": "hardware", "message": hardware["error"]})
+    else:
+        for section in ("os", "cpu", "ram"):
+            err = hardware.get(section, {}).get("error")
+            if err:
+                errors.append({"section": f"hardware.{section}", "message": err})
 
     data = {
         "collected_at":   datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
