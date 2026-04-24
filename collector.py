@@ -248,21 +248,65 @@ def _get_gpu_info() -> list:
         return []
 
 
+_SMBIOS_MEMORY_TYPE: dict[int, str] = {
+    20: "DDR",
+    21: "DDR2",
+    22: "DDR2 FB-DIMM",
+    24: "DDR3",
+    26: "DDR4",
+    34: "DDR5",
+}
+
+
 def _get_ram_info() -> dict:
     try:
         ps_script = """
-        $os = Get-WmiObject Win32_OperatingSystem
+        $mem = Get-WmiObject Win32_PhysicalMemory
+        $os  = Get-WmiObject Win32_OperatingSystem
+        $sticks = @($mem | ForEach-Object {
+            [PSCustomObject]@{
+                capacity    = $_.Capacity
+                speed       = $_.Speed
+                memory_type = $_.SMBIOSMemoryType
+                manufacturer = ($_.Manufacturer -replace '\\s+', ' ').Trim()
+                part_number  = ($_.PartNumber  -replace '\\s+', ' ').Trim()
+                slot         = $_.DeviceLocator
+            }
+        })
         [PSCustomObject]@{
-            total_bytes     = $os.TotalVisibleMemorySize * 1KB
+            sticks          = $sticks
             available_bytes = $os.FreePhysicalMemory * 1KB
-        } | ConvertTo-Json -Compress
+        } | ConvertTo-Json -Compress -Depth 5
         """
         data = _parse_json(_run_powershell(ps_script), {})
-        total = data.get("total_bytes", 0)
+
+        raw_sticks = data.get("sticks", [])
+        if isinstance(raw_sticks, dict):
+            raw_sticks = [raw_sticks]
+
+        sticks = []
+        total_bytes = 0
+        for s in raw_sticks:
+            cap = int(s.get("capacity") or 0)
+            total_bytes += cap
+            type_code = s.get("memory_type")
+            mem_type = _SMBIOS_MEMORY_TYPE.get(int(type_code), "Unknown") if type_code else "Unknown"
+            mfr = (s.get("manufacturer") or "").strip()
+            pn  = (s.get("part_number")  or "").strip()
+            sticks.append({
+                "size_gb":      round(cap / (1024**3), 2) if cap else None,
+                "speed_mhz":    s.get("speed"),
+                "type":         mem_type,
+                "manufacturer": mfr if mfr and mfr != "Unknown" else None,
+                "part_number":  pn  if pn  and pn  != "Unknown" else None,
+                "slot":         s.get("slot"),
+            })
+
         avail = data.get("available_bytes", 0)
         return {
-            "total_gb":     round(total / (1024**3), 2) if total else None,
+            "total_gb":     round(total_bytes / (1024**3), 2) if total_bytes else None,
             "available_gb": round(avail / (1024**3), 2) if avail else None,
+            "sticks":       sticks,
         }
     except Exception as e:
         logger.warning(f"RAM 정보 수집 실패: {e}")
