@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # ── 보안 프로그램 수집 ────────────────────────────────────────────
 def get_antivirus_info() -> dict:
-    """WMI SecurityCenter2로 백신 탐지, 알약/V3/Defender 버전 수집"""
+    """WMI SecurityCenter2로 백신 탐지, 알약/V3/Defender/McAfee 버전 수집"""
     try:
         ps_script = """
         $av = Get-WmiObject -Namespace root/SecurityCenter2 -Class AntiVirusProduct 2>$null
@@ -64,6 +64,12 @@ def get_antivirus_info() -> dict:
                 ) or _get_registry_version(
                     r"SOFTWARE\WOW6432Node\AhnLab\V3 365 Clinic", "Version"
                 )
+            elif info["type"] == "mcafee":
+                info["version"] = _get_registry_version(
+                    r"SOFTWARE\McAfee\DesktopProtection", "szProductVer"
+                ) or _get_registry_version(
+                    r"SOFTWARE\WOW6432Node\McAfee\DesktopProtection", "szProductVer"
+                )
 
             programs.append(info)
 
@@ -85,6 +91,8 @@ def _detect_av_type(name: str) -> str:
         return "v3"
     if "windows defender" in name_lower or "microsoft defender" in name_lower:
         return "defender"
+    if "mcafee" in name_lower or "맥아피" in name_lower:
+        return "mcafee"
     return "other"
 
 
@@ -145,6 +153,7 @@ def get_hardware_info() -> dict:
     """CPU, RAM, 디스크, OS, MAC, 컴퓨터 이름 수집 (병렬 실행)"""
     tasks = {
         "mac_address": _get_mac_address,
+        "uuid":        _get_system_uuid,
         "os":          _get_os_info,
         "cpu":         _get_cpu_info,
         "gpu":         _get_gpu_info,
@@ -176,6 +185,15 @@ def _get_mac_address() -> str:
         return result if result else str(uuid.getnode())
     except Exception:
         return str(uuid.getnode())
+
+
+def _get_system_uuid() -> str:
+    """시스템 UUID 수집 (메인보드/섀시 고유 식별자, 장치 구분 기준)"""
+    try:
+        result = _run_powershell("(Get-CimInstance Win32_ComputerSystemProduct).UUID").strip()
+        return result if result else "unknown"
+    except Exception:
+        return "unknown"
 
 
 def _get_os_info() -> dict:
