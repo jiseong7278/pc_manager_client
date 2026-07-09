@@ -20,7 +20,7 @@ import config
 class TestCommandParsing:
     """subscribe_and_run의 명령어 파싱 로직 단위 테스트"""
 
-    def _parse_command(self, raw: str, my_hostname: str) -> tuple[str | None, bool]:
+    def _parse_command(self, raw: str, my_hostname: str, my_uuid: str = "uuid-unused") -> tuple[str | None, bool]:
         """
         실제 subscribe_and_run의 파싱 로직을 그대로 추출
         returns (command, should_execute)
@@ -33,10 +33,14 @@ class TestCommandParsing:
         if not isinstance(payload, dict):
             return None, False
 
-        command = payload.get("command")
-        target  = payload.get("target")
+        command     = payload.get("command")
+        target      = payload.get("target")
+        target_uuid = payload.get("target_uuid")
 
         if target and target != my_hostname:
+            return command, False
+
+        if target_uuid and target_uuid != my_uuid:
             return command, False
 
         return command, True
@@ -58,6 +62,24 @@ class TestCommandParsing:
 
     def test_targeted_different_host_skipped(self):
         cmd, should = self._parse_command('{"command": "inspect", "target": "PC-002"}', "PC-001")
+        assert cmd == "inspect"
+        assert should is False
+
+    def test_target_uuid_matching_executes(self):
+        """hostname이 같고 uuid도 일치하면 실행 (우클릭 단일 기기 정밀 타겟팅)"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "target": "DUP-PC", "target_uuid": "uuid-AAA"}',
+            "DUP-PC", "uuid-AAA",
+        )
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_target_uuid_mismatch_skipped_despite_hostname_match(self):
+        """hostname은 같아도 uuid가 다르면 건너뜀 (hostname 중복 기기 구분)"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "target": "DUP-PC", "target_uuid": "uuid-AAA"}',
+            "DUP-PC", "uuid-BBB",
+        )
         assert cmd == "inspect"
         assert should is False
 
@@ -85,7 +107,7 @@ class TestCommandParsing:
 class TestTargetsListParsing:
     """subscribe_and_run의 targets 리스트 필터링 로직 단위 테스트"""
 
-    def _parse_command(self, raw: str, my_hostname: str) -> tuple[str | None, bool]:
+    def _parse_command(self, raw: str, my_hostname: str, my_uuid: str = "uuid-unused") -> tuple[str | None, bool]:
         """
         실제 subscribe_and_run의 파싱 로직 (targets 포함) 추출
         returns (command, should_execute)
@@ -98,14 +120,22 @@ class TestTargetsListParsing:
         if not isinstance(payload, dict):
             return None, False
 
-        command = payload.get("command")
-        target  = payload.get("target")
-        targets = payload.get("targets")
+        command      = payload.get("command")
+        target       = payload.get("target")
+        targets      = payload.get("targets")
+        target_uuid  = payload.get("target_uuid")
+        targets_uuid = payload.get("targets_uuid")
 
         if target and target != my_hostname:
             return command, False
 
+        if target_uuid and target_uuid != my_uuid:
+            return command, False
+
         if targets and my_hostname not in targets:
+            return command, False
+
+        if targets_uuid and my_uuid not in targets_uuid:
             return command, False
 
         return command, True
@@ -124,6 +154,26 @@ class TestTargetsListParsing:
         cmd, should = self._parse_command(
             '{"command": "inspect", "targets": ["PC-001", "PC-003"]}',
             "PC-002",
+        )
+        assert cmd == "inspect"
+        assert should is False
+
+    def test_targets_uuid_included_executes(self):
+        """hostname이 같은 기기 여럿 중 내 uuid가 targets_uuid에 포함되면 실행"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "targets": ["DUP-PC", "PC-003"], '
+            '"targets_uuid": ["uuid-AAA", "uuid-CCC"]}',
+            "DUP-PC", "uuid-AAA",
+        )
+        assert cmd == "inspect"
+        assert should is True
+
+    def test_targets_uuid_not_included_skipped_despite_hostname_match(self):
+        """hostname은 targets에 있어도 uuid가 targets_uuid에 없으면 건너뜀 (hostname 중복 기기 구분)"""
+        cmd, should = self._parse_command(
+            '{"command": "inspect", "targets": ["DUP-PC", "PC-003"], '
+            '"targets_uuid": ["uuid-AAA", "uuid-CCC"]}',
+            "DUP-PC", "uuid-BBB",
         )
         assert cmd == "inspect"
         assert should is False
@@ -581,7 +631,7 @@ class TestSendHeartbeatWs:
         with patch("redis_client._ws", mock_ws_module):
             t = threading.Thread(
                 target=redis_client.send_heartbeat_ws,
-                args=("PC-TEST", "192.168.0.1", stop_event),
+                args=("PC-TEST", "192.168.0.1", "uuid-1234", stop_event),
                 daemon=True,
             )
             t.start()
@@ -592,6 +642,7 @@ class TestSendHeartbeatWs:
         assert beat["type"]        == "heartbeat"
         assert beat["hostname"]    == "PC-TEST"
         assert beat["ip_address"]  == "192.168.0.1"
+        assert beat["uuid"]        == "uuid-1234"
         assert beat["version"]     == config.CLIENT_VERSION
 
     def test_heartbeat_ws_failure_does_not_crash(self):
@@ -616,7 +667,7 @@ class TestSendHeartbeatWs:
         with patch("redis_client._ws", mock_ws_module):
             t = threading.Thread(
                 target=redis_client.send_heartbeat_ws,
-                args=("PC-TEST", "192.168.0.1", stop_event),
+                args=("PC-TEST", "192.168.0.1", "uuid-1234", stop_event),
                 daemon=True,
             )
             t.start()

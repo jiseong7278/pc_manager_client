@@ -17,6 +17,7 @@ import win32service
 import win32serviceutil
 
 import config
+from collector import get_system_uuid
 from redis_client import subscribe_and_run, send_heartbeat_ws, _get_ip_address
 from updater import check_and_update
 
@@ -73,11 +74,13 @@ class PCInspectService(win32serviceutil.ServiceFramework):
         import socket
         hostname   = socket.gethostname()
         ip_address = _get_ip_address()
+        # heartbeat/명령 타겟팅 양쪽에서 쓰므로 PowerShell을 두 번 호출하지 않도록 시작 시 1회만 수집
+        device_uuid = get_system_uuid()
 
         # Redis 구독 스레드
         redis_thread = threading.Thread(
             target=subscribe_and_run,
-            args=(self._stop_event,),
+            args=(self._stop_event, device_uuid),
             name="RedisSubscriber",
             daemon=True,
         )
@@ -97,7 +100,7 @@ class PCInspectService(win32serviceutil.ServiceFramework):
         # Heartbeat 스레드 (WebSocket)
         heartbeat_thread = threading.Thread(
             target=send_heartbeat_ws,
-            args=(hostname, ip_address, self._stop_event),
+            args=(hostname, ip_address, device_uuid, self._stop_event),
             name="Heartbeat",
             daemon=True,
         )

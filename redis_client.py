@@ -16,7 +16,7 @@ import redis
 import websocket as _ws
 
 import config
-from collector import collect_all
+from collector import collect_all, get_system_uuid
 from updater import trigger_update
 
 logger = logging.getLogger(__name__)
@@ -254,7 +254,7 @@ def publish_result(data: dict) -> None:
         r.close()
 
 
-def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Event) -> None:
+def send_heartbeat_ws(hostname: str, ip_address: str, device_uuid: str, stop_event: threading.Event) -> None:
     """
     주기적으로 heartbeat를 서버 WebSocket으로 전송하는 루프.
     서버가 접속/해제 시점을 즉시 감지해 온라인 PC 목록을 관리한다.
@@ -296,6 +296,7 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
                         "type":       "heartbeat",
                         "hostname":   hostname,
                         "ip_address": ip_address,
+                        "uuid":       device_uuid,
                         "version":    config.CLIENT_VERSION,
                     }, ensure_ascii=False)
                     ws.send(beat)
@@ -317,14 +318,19 @@ def send_heartbeat_ws(hostname: str, ip_address: str, stop_event: threading.Even
                     ws.close()
 
 
-def subscribe_and_run(stop_event) -> None:
+def subscribe_and_run(stop_event, device_uuid: str | None = None) -> None:
     """
     Redis Pub-Sub 채널 구독 루프
     서버에서 명령 수신 시 처리:
       inspect - PC 데이터 수집 후 Stream 전송
       update  - 클라이언트 업데이트 실행
+
+    device_uuid: 호출자가 이미 수집해둔 값이 있으면 재사용(예: service.py가 heartbeat용으로
+    이미 호출한 값). None이면 이 함수가 직접 수집한다(PowerShell 호출이라 스레드 생명주기 동안
+    1회만, 재연결 루프 밖에서 수행).
     """
     hostname    = socket.gethostname()
+    my_uuid     = device_uuid if device_uuid is not None else get_system_uuid()
     retry_count = 0
 
     while not stop_event.is_set():
@@ -372,16 +378,27 @@ def subscribe_and_run(stop_event) -> None:
                         )
                         continue
 
-                command = payload.get("command")
-                target  = payload.get("target")
-                targets = payload.get("targets")  # 다중 타겟 리스트
+                command      = payload.get("command")
+                target       = payload.get("target")
+                targets      = payload.get("targets")       # 다중 타겟 리스트
+                target_uuid  = payload.get("target_uuid")   # hostname이 같은 PC 중 정밀 지정용
+                targets_uuid = payload.get("targets_uuid")  # 다중 타겟 정밀 지정용
 
                 # 단일 target이 지정된 경우 내 호스트명과 일치할 때만 실행
                 if target and target != hostname:
                     continue
 
+                # target_uuid가 함께 지정된 경우 내 uuid까지 일치해야 실행
+                # (hostname이 같은 별개 PC 중 하나만 정밀 타겟팅하기 위함 — AND 조건)
+                if target_uuid and target_uuid != my_uuid:
+                    continue
+
                 # targets 리스트가 지정된 경우 내 호스트명이 포함될 때만 실행
                 if targets and hostname not in targets:
+                    continue
+
+                # targets_uuid 리스트가 지정된 경우 내 uuid가 포함될 때만 실행
+                if targets_uuid and my_uuid not in targets_uuid:
                     continue
 
                 if command == "inspect":

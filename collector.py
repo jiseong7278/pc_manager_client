@@ -153,7 +153,7 @@ def get_hardware_info() -> dict:
     """CPU, RAM, 디스크, OS, MAC, 컴퓨터 이름 수집 (병렬 실행)"""
     tasks = {
         "mac_address": _get_mac_address,
-        "uuid":        _get_system_uuid,
+        "uuid":        get_system_uuid,
         "os":          _get_os_info,
         "cpu":         _get_cpu_info,
         "gpu":         _get_gpu_info,
@@ -187,7 +187,7 @@ def _get_mac_address() -> str:
         return str(uuid.getnode())
 
 
-def _get_system_uuid() -> str:
+def get_system_uuid() -> str:
     """시스템 UUID 수집 (메인보드/섀시 고유 식별자, 장치 구분 기준)"""
     try:
         result = _run_powershell("(Get-CimInstance Win32_ComputerSystemProduct).UUID").strip()
