@@ -37,41 +37,25 @@ def get_antivirus_info() -> dict:
         if isinstance(av_list, dict):
             av_list = [av_list]
 
-        programs = []
+        infos = []
         for av in av_list:
             name    = av.get("name", "")
             state   = av.get("product_state", 0)
             enabled = _parse_av_state(state)
-
-            info = {
+            infos.append({
                 "name":    name,
                 "enabled": enabled,
                 "version": None,
                 "type":    _detect_av_type(name),
-            }
+            })
 
-            if info["type"] == "defender":
-                info.update(_get_defender_version())
-            elif info["type"] == "alyac":
-                info["version"] = _get_registry_version(
-                    r"SOFTWARE\ESTsoft\ALYac", "Version"
-                ) or _get_registry_version(
-                    r"SOFTWARE\WOW6432Node\ESTsoft\ALYac", "Version"
-                )
-            elif info["type"] == "v3":
-                info["version"] = _get_registry_version(
-                    r"SOFTWARE\AhnLab\V3 365 Clinic", "Version"
-                ) or _get_registry_version(
-                    r"SOFTWARE\WOW6432Node\AhnLab\V3 365 Clinic", "Version"
-                )
-            elif info["type"] == "mcafee":
-                info["version"] = _get_registry_version(
-                    r"SOFTWARE\McAfee\DesktopProtection", "szProductVer"
-                ) or _get_registry_version(
-                    r"SOFTWARE\WOW6432Node\McAfee\DesktopProtection", "szProductVer"
-                )
-
-            programs.append(info)
+        # 여러 백신이 동시 감지된 PC(예: 예전 백신 잔여 등록)에서 버전 조회가
+        # 순차 실행되면 항목당 최대 30s씩 누적돼 전체 타임아웃(90s)에 걸릴 수
+        # 있어 병렬로 실행한다
+        programs = []
+        if infos:
+            with ThreadPoolExecutor(max_workers=len(infos)) as ex:
+                programs = list(ex.map(_fetch_av_version, infos))
 
         if not programs:
             return {"status": "no_av", "programs": [], "message": "감지된 백신 없음"}
@@ -81,6 +65,31 @@ def get_antivirus_info() -> dict:
     except Exception as e:
         logger.error(f"백신 정보 수집 실패: {e}")
         return {"status": "error", "programs": [], "message": str(e)}
+
+
+def _fetch_av_version(info: dict) -> dict:
+    """감지된 백신 항목 하나의 버전 정보를 조회해 info에 채운다 (병렬 실행용)"""
+    if info["type"] == "defender":
+        info.update(_get_defender_version())
+    elif info["type"] == "alyac":
+        info["version"] = _get_registry_version(
+            r"SOFTWARE\ESTsoft\ALYac", "Version"
+        ) or _get_registry_version(
+            r"SOFTWARE\WOW6432Node\ESTsoft\ALYac", "Version"
+        )
+    elif info["type"] == "v3":
+        info["version"] = _get_registry_version(
+            r"SOFTWARE\AhnLab\V3 365 Clinic", "Version"
+        ) or _get_registry_version(
+            r"SOFTWARE\WOW6432Node\AhnLab\V3 365 Clinic", "Version"
+        )
+    elif info["type"] == "mcafee":
+        info["version"] = _get_registry_version(
+            r"SOFTWARE\McAfee\DesktopProtection", "szProductVer"
+        ) or _get_registry_version(
+            r"SOFTWARE\WOW6432Node\McAfee\DesktopProtection", "szProductVer"
+        )
+    return info
 
 
 def _detect_av_type(name: str) -> str:
