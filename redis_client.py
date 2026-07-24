@@ -485,11 +485,31 @@ def subscribe_and_run(stop_event, device_uuid: str | None = None) -> None:
 
 
 def _get_ip_address() -> str:
-    """현재 PC의 IP 주소 조회"""
+    """현재 PC의 IP 주소 조회.
+
+    REDIS_HOST로의 라우팅을 우선 사용하되(서버와 실제로 통신하는 인터페이스를
+    고르기 위함), 이 PC 자신이 REDIS_HOST인 경우 OS가 루프백으로 라우팅해
+    127.0.0.1이 나올 수 있어 외부용 주소로 재시도한다. 그래도 실패하면
+    호스트명에 연결된 주소 중 루프백이 아닌 것을 찾는다.
+    """
+    for target in ((config.REDIS_HOST, config.REDIS_PORT), ("8.8.8.8", 80)):
+        try:
+            # 실제 패킷은 나가지 않음 — 라우팅 테이블상 사용될 로컬 인터페이스만 확인
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(target)
+                ip = s.getsockname()[0]
+            if not ip.startswith("127."):
+                return ip
+        except Exception as e:
+            logger.warning(f"_get_ip_address: {target} 라우팅 조회 실패: {e}")
+
     try:
-        # 외부 연결용 소켓으로 실제 사용 중인 IP 확인
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect((config.REDIS_HOST, config.REDIS_PORT))
-            return s.getsockname()[0]
-    except Exception:
-        return socket.gethostbyname(socket.gethostname())
+        _, _, addrs = socket.gethostbyname_ex(socket.gethostname())
+        for addr in addrs:
+            if not addr.startswith("127."):
+                return addr
+    except Exception as e:
+        logger.warning(f"_get_ip_address: gethostbyname_ex 실패: {e}")
+
+    logger.warning("_get_ip_address: 유효한 non-loopback IP를 찾지 못해 127.0.0.1 반환")
+    return "127.0.0.1"

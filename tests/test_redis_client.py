@@ -696,3 +696,47 @@ class TestCollectLock:
         # 두 번째에도 정상 획득 가능해야 함
         assert redis_client._collect_lock.acquire(blocking=False)
         redis_client._collect_lock.release()
+
+
+class TestGetIpAddress:
+    """_get_ip_address의 루프백 폴백 로직 테스트"""
+
+    def _make_socket(self, sockname: str, connect_exc: Exception | None = None):
+        mock_sock = MagicMock()
+        if connect_exc:
+            mock_sock.connect.side_effect = connect_exc
+        mock_sock.getsockname.return_value = (sockname, 0)
+        mock_sock.__enter__.return_value = mock_sock
+        mock_sock.__exit__.return_value = False
+        return mock_sock
+
+    def test_normal_case_uses_redis_host_route(self):
+        """REDIS_HOST 라우팅이 정상 IP를 반환하면 그대로 사용"""
+        import redis_client
+        sock = self._make_socket("192.168.10.55")
+        with patch("socket.socket", return_value=sock):
+            assert redis_client._get_ip_address() == "192.168.10.55"
+
+    def test_loopback_from_redis_host_falls_back_to_external_probe(self):
+        """REDIS_HOST가 자기 자신이라 루프백이 나오면 외부용 주소로 재시도"""
+        import redis_client
+        loopback_sock = self._make_socket("127.0.0.1")
+        real_sock     = self._make_socket("192.168.10.55")
+        with patch("socket.socket", side_effect=[loopback_sock, real_sock]):
+            assert redis_client._get_ip_address() == "192.168.10.55"
+
+    def test_connect_exception_falls_back_to_gethostbyname_ex(self):
+        """두 소켓 시도 모두 예외면 gethostbyname_ex의 non-loopback 주소 사용"""
+        import redis_client
+        failing_sock = self._make_socket("0.0.0.0", connect_exc=OSError("network unreachable"))
+        with patch("socket.socket", return_value=failing_sock), \
+             patch("socket.gethostbyname_ex", return_value=("host", [], ["127.0.0.1", "10.0.0.9"])):
+            assert redis_client._get_ip_address() == "10.0.0.9"
+
+    def test_all_paths_fail_returns_loopback(self):
+        """모든 방법이 실패하면 최종적으로 127.0.0.1 반환"""
+        import redis_client
+        failing_sock = self._make_socket("0.0.0.0", connect_exc=OSError("network unreachable"))
+        with patch("socket.socket", return_value=failing_sock), \
+             patch("socket.gethostbyname_ex", side_effect=OSError("dns fail")):
+            assert redis_client._get_ip_address() == "127.0.0.1"
